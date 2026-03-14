@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<usx version="3.0">
+  <book code="GEN" style="id">Test Bible</book>
+  <para style="h">Genesis</para>
+  <chapter number="1" style="c" />
+  <para style="p">
+    <verse number="1" style="v" />In the beginning God created the heavens and the earth.
+    <verse number="2" style="v" />The earth was formless and empty.
+    <verse number="3" style="v" />Then God said, "Let there be light."
+  </para>
+  <chapter number="2" style="c" />
+  <para style="p">
+    <verse number="1" style="v" />So the creation was completed.
+  </para>
+</usx>

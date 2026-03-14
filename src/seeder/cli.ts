@@ -111,10 +111,18 @@ program
 
 program
   .command("seed-daily")
-  .description("Seed daily verses (placeholder — will be implemented in Task 24)")
+  .description("Seed 366 curated daily verses into the database")
   .action(async () => {
-    console.log("seed-daily: Not yet implemented. See Task 24.");
-    await queryClient.end();
+    try {
+      const { seedDailyVerses } = await import("./daily-verses-seed.js");
+      await seedDailyVerses();
+      console.log("Daily verses seeding complete!");
+    } catch (err) {
+      console.error("Daily verses seed failed:", err);
+      process.exit(1);
+    } finally {
+      await queryClient.end();
+    }
   });
 
 program.parse();

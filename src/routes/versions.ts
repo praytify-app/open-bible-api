@@ -4,6 +4,7 @@ import { versions, languages, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql, and } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
+import { API_BIBLE_VERSIONS } from "../lib/api-bible-config.js";
 
 const TWENTY_FOUR_HOURS = 86400;
 const SEVEN_DAYS = 604800;
@@ -55,9 +56,31 @@ versionsRouter.get("/", cacheControl(TWENTY_FOUR_HOURS), async (c) => {
       .where(whereClause),
   ]);
 
-  const total = totalResult[0]?.total ?? 0;
+  const dbTotal = totalResult[0]?.total ?? 0;
 
-  return success(c, rows, {
+  const apiBibleEntries = Object.entries(API_BIBLE_VERSIONS).map(
+    ([abbreviation, config]) => ({
+      id: `api-bible-${abbreviation}`,
+      abbreviation,
+      name: config.name,
+      language: config.language,
+      languageCode: config.languageCode,
+      source: "api-bible" as const,
+      isOfflineCapable: false,
+      verseCount: null,
+    }),
+  );
+
+  const dbVersionsWithSource = rows.map((v: any) => ({
+    ...v,
+    source: "self-hosted" as const,
+    isOfflineCapable: true,
+  }));
+
+  const allVersions = [...dbVersionsWithSource, ...apiBibleEntries];
+  const total = dbTotal + apiBibleEntries.length;
+
+  return success(c, allVersions, {
     page,
     limit,
     total,

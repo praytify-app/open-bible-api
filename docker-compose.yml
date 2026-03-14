@@ -1,0 +1,35 @@
+services:
+  api:
+    build: .
+    ports:
+      - "3100:3100"
+    environment:
+      DATABASE_URL: postgresql://bible:bible@db:5432/open_bible
+      PORT: "3100"
+      HOST: "0.0.0.0"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-dev-admin-token}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+      RATE_LIMIT: "${RATE_LIMIT:-100}"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bible
+      POSTGRES_PASSWORD: bible
+      POSTGRES_DB: open_bible
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bible -d open_bible"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

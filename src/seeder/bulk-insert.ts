@@ -1,7 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { ParsedBook } from "./usfm-parser.js";
 import { getBookMeta } from "./book-metadata.js";
-import { getPgDictionary } from "../lib/pg-dictionaries.js";
 import {
   languages,
   versions,
@@ -9,7 +8,7 @@ import {
   chapters,
   verses,
 } from "../db/schema.js";
-import { db, queryClient } from "../db/client.js";
+import { db } from "../db/client.js";
 
 export interface SeedVersionOptions {
   /** Parsed books from Bible files */
@@ -56,8 +55,6 @@ export async function seedVersion(options: SeedVersionOptions): Promise<void> {
     license,
     sourceUrl,
   } = options;
-
-  const pgDict = getPgDictionary(languageCode);
 
   // 1. Upsert language
   const existingLangs = await db
@@ -159,25 +156,8 @@ export async function seedVersion(options: SeedVersionOptions): Promise<void> {
     }
   }
 
-  // 4. Build tsvector search index
-  // Add a search_vector column if it doesn't exist, then populate it
-  try {
-    await queryClient`
-      ALTER TABLE verses ADD COLUMN IF NOT EXISTS search_vector tsvector
-    `;
-    await queryClient`
-      CREATE INDEX IF NOT EXISTS verses_search_idx ON verses USING gin(search_vector)
-    `;
-  } catch {
-    // Column/index may already exist
-  }
-
-  // Update search vectors for newly inserted verses
-  await queryClient`
-    UPDATE verses
-    SET search_vector = to_tsvector(${pgDict}::regconfig, text)
-    WHERE search_vector IS NULL
-  `;
+  // 4. search_vector is a GENERATED ALWAYS STORED column (created by migration),
+  //    so it auto-populates from the 'text' column. No manual update needed.
 
   // 5. Update verse count on version
   await db

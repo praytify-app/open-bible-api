@@ -75,7 +75,7 @@ program
         abbreviation: opts.abbreviation,
         name: opts.name,
         license: opts.license,
-        sourceUrl: `https://ebible.org/Scriptures/content/${opts.translation}_usfm.zip`,
+        sourceUrl: `https://ebible.org/Scriptures/${opts.translation}_usfm.zip`,
       });
 
       console.log("Seeding complete!");

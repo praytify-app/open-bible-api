@@ -7,7 +7,7 @@ import { parseBibleFile } from "../parser.js";
 import { getBookMeta } from "../book-metadata.js";
 
 const CACHE_DIR = join(process.cwd(), ".cache", "ebible");
-const EBIBLE_BASE_URL = "https://ebible.org/Scriptures/content";
+const EBIBLE_BASE_URL = "https://ebible.org/Scriptures";
 
 /**
  * Download and parse a Bible translation from eBible.org.

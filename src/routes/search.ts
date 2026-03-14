@@ -81,6 +81,9 @@ searchRouter.get("/", cacheControl(ONE_HOUR), async (c) => {
 
   let results;
 
+  // Format version IDs as a PG array literal: {uuid1,uuid2,...}
+  const pgArray = `{${versionIds.join(",")}}`;
+
   if (hasTsvector) {
     // Use tsvector for languages with PG dictionaries
     results = await db.execute(sql`
@@ -99,7 +102,7 @@ searchRouter.get("/", cacheControl(ONE_HOUR), async (c) => {
       JOIN chapters c ON v.chapter_id = c.id
       JOIN books b ON c.book_id = b.id
       JOIN versions ver ON b.version_id = ver.id
-      WHERE b.version_id = ANY(${versionIds}::uuid[])
+      WHERE b.version_id = ANY(${pgArray}::uuid[])
         AND to_tsvector(${dictName}::regconfig, v.text) @@ plainto_tsquery(${dictName}::regconfig, ${q})
       ORDER BY rank DESC
       LIMIT ${limit}
@@ -123,7 +126,7 @@ searchRouter.get("/", cacheControl(ONE_HOUR), async (c) => {
       JOIN chapters c ON v.chapter_id = c.id
       JOIN books b ON c.book_id = b.id
       JOIN versions ver ON b.version_id = ver.id
-      WHERE b.version_id = ANY(${versionIds}::uuid[])
+      WHERE b.version_id = ANY(${pgArray}::uuid[])
         AND v.text ILIKE ${"%" + q + "%"}
       ORDER BY rank DESC
       LIMIT ${limit}

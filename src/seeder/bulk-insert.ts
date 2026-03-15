@@ -31,6 +31,12 @@ export interface SeedVersionOptions {
   license?: string;
   /** Source URL */
   sourceUrl?: string;
+  /** Attribution text (e.g. copyright holder) */
+  attribution?: string;
+  /** Attribution URL */
+  attributionUrl?: string;
+  /** License type: PD, CC_BY, CC_BY_SA, OTHER */
+  licenseType?: string;
 }
 
 /**
@@ -54,6 +60,9 @@ export async function seedVersion(options: SeedVersionOptions): Promise<void> {
     name,
     license,
     sourceUrl,
+    attribution,
+    attributionUrl,
+    licenseType,
   } = options;
 
   // 1. Upsert language
@@ -89,9 +98,10 @@ export async function seedVersion(options: SeedVersionOptions): Promise<void> {
     .limit(1);
 
   if (existingVersions.length > 0) {
-    throw new Error(
-      `Version "${abbreviation}" already exists. Delete it first to re-seed.`
+    console.log(
+      `Version "${abbreviation}" already exists, skipping.`
     );
+    return;
   }
 
   // 3. Insert version, books, chapters, verses in a transaction
@@ -105,6 +115,9 @@ export async function seedVersion(options: SeedVersionOptions): Promise<void> {
       name,
       license: license ?? null,
       sourceUrl: sourceUrl ?? null,
+      attribution: attribution ?? null,
+      attributionUrl: attributionUrl ?? null,
+      licenseType: licenseType ?? "PD",
       verseCount: 0,
     })
     .returning({ id: versions.id });

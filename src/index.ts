@@ -1,5 +1,6 @@
-import { Hono } from "hono";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { serve } from "@hono/node-server";
+import { apiReference } from "@scalar/hono-api-reference";
 import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import { languagesRouter } from "./routes/languages.js";
@@ -11,7 +12,7 @@ import { searchRouter } from "./routes/search.js";
 import { dailyRouter } from "./routes/daily.js";
 import { adminRouter } from "./routes/admin.js";
 
-const app = new Hono();
+const app = new OpenAPIHono();
 
 // Global CORS middleware
 app.use("*", corsMiddleware(process.env.CORS_ORIGINS || "*"));
@@ -44,6 +45,29 @@ app.route("/api/v1/verses", versesRouter);
 app.route("/api/v1/search", searchRouter);
 app.route("/api/v1/daily", dailyRouter);
 app.route("/api/v1/admin", adminRouter);
+
+// OpenAPI spec endpoint
+app.doc("/api/v1/openapi.json", {
+  openapi: "3.1.0",
+  info: {
+    title: "Open Bible API",
+    version: "1.0.0",
+    description: "Open-source REST API serving Bible data from eBible.org. 600+ translations, 100+ languages.",
+    license: { name: "MIT", url: "https://opensource.org/licenses/MIT" },
+    contact: { name: "Praytify", url: "https://praytify.bible" },
+  },
+  servers: [
+    { url: "https://api.praytify.bible", description: "Production" },
+    { url: "http://localhost:3100", description: "Local development" },
+  ],
+});
+
+// Interactive API docs
+app.get("/docs", apiReference({
+  spec: { url: "/api/v1/openapi.json" },
+  theme: "purple",
+  layout: "modern",
+}));
 
 // 404 handler
 app.notFound((c) => {

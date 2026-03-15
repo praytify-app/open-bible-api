@@ -43,6 +43,10 @@ versionsRouter.get("/", cacheControl(TWENTY_FOUR_HOURS), async (c) => {
         canonType: versions.canonType,
         verseCount: versions.verseCount,
         languageId: versions.languageId,
+        attribution: versions.attribution,
+        attributionUrl: versions.attributionUrl,
+        licenseType: versions.licenseType,
+        hasAudio: versions.hasAudio,
         createdAt: versions.createdAt,
       })
       .from(versions)
@@ -75,6 +79,7 @@ versionsRouter.get("/", cacheControl(TWENTY_FOUR_HOURS), async (c) => {
     ...v,
     source: "self-hosted" as const,
     isOfflineCapable: true,
+    attributionRequired: v.licenseType !== "PD",
   }));
 
   const allVersions = [...dbVersionsWithSource, ...apiBibleEntries];
@@ -105,24 +110,42 @@ versionsRouter.get("/:id", cacheControl(TWENTY_FOUR_HOURS), async (c) => {
   return success(c, version[0]);
 });
 
-// Books in a version
+// Books in a version (accepts UUID or abbreviation)
 versionsRouter.get("/:id/books", cacheControl(SEVEN_DAYS), async (c) => {
   const id = c.req.param("id");
 
-  const version = await db
-    .select({ id: versions.id })
-    .from(versions)
-    .where(eq(versions.id, id))
-    .limit(1);
+  // UUID format check — avoid Postgres cast error on non-UUID strings
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  // Try by UUID first (if valid format), then by abbreviation
+  let version: { id: string }[] = [];
+
+  if (isUuid) {
+    version = await db
+      .select({ id: versions.id })
+      .from(versions)
+      .where(eq(versions.id, id))
+      .limit(1);
+  }
+
+  if (version.length === 0) {
+    version = await db
+      .select({ id: versions.id })
+      .from(versions)
+      .where(eq(versions.abbreviation, id))
+      .limit(1);
+  }
 
   if (version.length === 0) {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
   }
 
+  const versionId = version[0].id;
+
   const bookRows = await db
     .select()
     .from(books)
-    .where(eq(books.versionId, id))
+    .where(eq(books.versionId, versionId))
     .orderBy(books.position);
 
   return success(c, bookRows);

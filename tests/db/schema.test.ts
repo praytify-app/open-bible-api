@@ -25,6 +25,10 @@ describe("Database Schema", () => {
       expect(versions.sourceUrl).toBeDefined();
       expect(versions.canonType).toBeDefined();
       expect(versions.verseCount).toBeDefined();
+      expect(versions.attribution).toBeDefined();
+      expect(versions.attributionUrl).toBeDefined();
+      expect(versions.licenseType).toBeDefined();
+      expect(versions.hasAudio).toBeDefined();
       expect(versions.createdAt).toBeDefined();
     });
   });

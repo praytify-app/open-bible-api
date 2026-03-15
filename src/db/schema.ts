@@ -8,6 +8,7 @@ import {
   timestamp,
   unique,
   integer,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const languages = pgTable("languages", {
@@ -32,6 +33,10 @@ export const versions = pgTable("versions", {
   sourceUrl: varchar("source_url", { length: 500 }),
   canonType: varchar("canon_type", { length: 30 }).default("protestant").notNull(),
   verseCount: integer("verse_count").default(0).notNull(),
+  attribution: varchar("attribution", { length: 500 }),
+  attributionUrl: varchar("attribution_url", { length: 500 }),
+  licenseType: varchar("license_type", { length: 20 }).notNull().default("PD"),
+  hasAudio: boolean("has_audio").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

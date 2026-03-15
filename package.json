@@ -14,15 +14,23 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": ["bible", "api", "rest", "hono"],
+  "keywords": [
+    "bible",
+    "api",
+    "rest",
+    "hono"
+  ],
   "author": "Open Bible API Contributors",
   "license": "MIT",
   "dependencies": {
     "@hono/node-server": "^1.19.11",
+    "@hono/zod-openapi": "^1.2.2",
+    "@scalar/hono-api-reference": "^0.10.3",
     "commander": "^14.0.3",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.12.8",
-    "postgres": "^3.4.8"
+    "postgres": "^3.4.8",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

@@ -1,16 +1,52 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { verses, chapters, books, versions, languages } from "../db/schema.js";
 import { eq, and, sql, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
 import { PG_DICTIONARIES, getPgDictionary } from "../lib/pg-dictionaries.js";
+import { SearchQuerySchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
 const ONE_HOUR = 3600;
 
-const searchRouter = new Hono();
+const searchRouter = new OpenAPIHono();
 
-searchRouter.get("/", cacheControl(ONE_HOUR), async (c) => {
+const searchRoute = createRoute({
+  method: "get",
+  path: "/",
+  tags: ["Search"],
+  summary: "Full-text search verses",
+  description: "Search Bible verses using full-text search (tsvector for supported languages, trigram fallback for others). Requires either 'version' or 'language' parameter.",
+  request: {
+    query: z.object({
+      q: z.string().optional().openapi({ description: "Search query text", example: "love" }),
+      version: z.string().optional().openapi({ description: "Version abbreviation", example: "KJV" }),
+      language: z.string().optional().openapi({ description: "Language code", example: "eng" }),
+      limit: z.string().optional().openapi({ description: "Max results (default: 20, max: 100)", example: "20" }),
+      offset: z.string().optional().openapi({ description: "Result offset", example: "0" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Search results",
+      content: {
+        "application/json": {
+          schema: z.object({ data: z.array(z.any()) }),
+        },
+      },
+    },
+    400: {
+      description: "Missing required parameters",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Version or language not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+searchRouter.openapi(searchRoute, async (c) => {
   const q = c.req.query("q");
   const versionParam = c.req.query("version");
   const languageParam = c.req.query("language");

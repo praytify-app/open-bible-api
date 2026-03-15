@@ -1,17 +1,137 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { languages, versions, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { adminAuth } from "../middleware/admin-auth.js";
+import {
+  AdminStatsSchema,
+  CreateVersionBodySchema,
+  VersionSchema,
+  ErrorSchema,
+} from "../lib/openapi-schemas.js";
 
-const adminRouter = new Hono();
+const adminRouter = new OpenAPIHono();
 
 // All admin routes require auth
 adminRouter.use("*", adminAuth());
 
-// Stats
-adminRouter.get("/stats", async (c) => {
+const adminStatsRoute = createRoute({
+  method: "get",
+  path: "/stats",
+  tags: ["Admin"],
+  summary: "Get database statistics",
+  description: "Returns counts of languages, versions, verses, and database size. Requires admin authentication.",
+  responses: {
+    200: {
+      description: "Database statistics",
+      content: {
+        "application/json": {
+          schema: z.object({ data: AdminStatsSchema }),
+        },
+      },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const createVersionRoute = createRoute({
+  method: "post",
+  path: "/versions",
+  tags: ["Admin"],
+  summary: "Create a new Bible version",
+  description: "Add a new Bible version to the database. Requires admin authentication.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: CreateVersionBodySchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Version created",
+      content: {
+        "application/json": {
+          schema: z.object({ data: z.any() }),
+        },
+      },
+    },
+    400: {
+      description: "Missing required fields",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Language not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    409: {
+      description: "Version already exists",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const seedRoute = createRoute({
+  method: "post",
+  path: "/seed",
+  tags: ["Admin"],
+  summary: "Seed placeholder",
+  description: "Returns instructions for seeding via CLI. Requires admin authentication.",
+  responses: {
+    202: {
+      description: "Seeding instructions",
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.object({
+              message: z.string(),
+              status: z.string(),
+            }),
+          }),
+        },
+      },
+    },
+  },
+});
+
+const deleteVersionRoute = createRoute({
+  method: "delete",
+  path: "/versions/{id}",
+  tags: ["Admin"],
+  summary: "Delete a Bible version",
+  description: "Delete a version and all its associated books, chapters, and verses (CASCADE). Requires admin authentication.",
+  request: {
+    params: z.object({
+      id: z.string().openapi({ description: "Version UUID" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Version deleted",
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.object({ message: z.string() }),
+          }),
+        },
+      },
+    },
+    404: {
+      description: "Version not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+// --- Handlers ---
+
+adminRouter.openapi(adminStatsRoute, async (c) => {
   const [langCount, versionCount, verseCount, dbSizeResult] = await Promise.all([
     db.select({ total: count() }).from(languages),
     db.select({ total: count() }).from(versions),
@@ -29,8 +149,7 @@ adminRouter.get("/stats", async (c) => {
   });
 });
 
-// Add a version
-adminRouter.post("/versions", async (c) => {
+adminRouter.openapi(createVersionRoute, async (c) => {
   const body = await c.req.json();
 
   const { abbreviation, name, languageCode, license, description, sourceUrl, canonType } = body;
@@ -82,8 +201,7 @@ adminRouter.post("/versions", async (c) => {
   return c.json({ data: newVersion }, 201);
 });
 
-// Seed placeholder
-adminRouter.post("/seed", async (c) => {
+adminRouter.openapi(seedRoute, async (c) => {
   return c.json(
     {
       data: {
@@ -96,8 +214,7 @@ adminRouter.post("/seed", async (c) => {
   );
 });
 
-// Delete a version (CASCADE)
-adminRouter.delete("/versions/:id", async (c) => {
+adminRouter.openapi(deleteVersionRoute, async (c) => {
   const id = c.req.param("id");
 
   const version = await db

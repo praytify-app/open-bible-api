@@ -1,17 +1,79 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { verses, chapters, books, versions, languages } from "../db/schema.js";
 import { eq, and, sql, ilike } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
 import { parseReference } from "../lib/reference-parser.js";
+import { cleanVerseText } from "../lib/text-cleaner.js";
+import { VerseSchema, VerseRefQuerySchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
 const THIRTY_DAYS = 2592000;
 
-const versesRouter = new Hono();
+const versesRouter = new OpenAPIHono();
 
-// Reference lookup: GET /?ref=John+3:16&version=KJV
-versesRouter.get("/", cacheControl(THIRTY_DAYS), async (c) => {
+const verseRefRoute = createRoute({
+  method: "get",
+  path: "/",
+  tags: ["Verses"],
+  summary: "Lookup verses by reference",
+  description: "Lookup verses by human-readable reference (e.g. 'John 3:16'). Supports parallel versions via comma-separated version codes.",
+  request: {
+    query: z.object({
+      ref: z.string().optional().openapi({ description: "Bible reference (e.g. 'John 3:16')", example: "John 3:16" }),
+      version: z.string().optional().openapi({ description: "Version abbreviation(s), comma-separated for parallel", example: "KJV" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Verse(s) matching the reference",
+      content: {
+        "application/json": {
+          schema: z.object({ data: z.any() }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid reference or missing parameters",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const getVerseRoute = createRoute({
+  method: "get",
+  path: "/{id}",
+  tags: ["Verses"],
+  summary: "Get a verse by ID",
+  description: "Returns a single verse by its numeric ID.",
+  request: {
+    params: z.object({
+      id: z.string().openapi({ description: "Verse numeric ID", example: "1" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Verse details",
+      content: {
+        "application/json": {
+          schema: z.object({ data: VerseSchema }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid verse ID",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Verse not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+// --- Handlers ---
+
+versesRouter.openapi(verseRefRoute, async (c) => {
   const ref = c.req.query("ref");
   const versionParam = c.req.query("version");
 
@@ -126,7 +188,7 @@ versesRouter.get("/", cacheControl(THIRTY_DAYS), async (c) => {
     result[versionCode] = {
       reference: ref,
       version: versionCode,
-      verses: verseQuery,
+      verses: verseQuery.map((v: any) => ({ ...v, text: cleanVerseText(v.text) })),
       license: v.license,
       ...(attribution ? { attribution } : {}),
     };
@@ -141,8 +203,7 @@ versesRouter.get("/", cacheControl(THIRTY_DAYS), async (c) => {
   return success(c, singleResult);
 });
 
-// Single verse by ID
-versesRouter.get("/:id", cacheControl(THIRTY_DAYS), async (c) => {
+versesRouter.openapi(getVerseRoute, async (c) => {
   const idParam = c.req.param("id");
   const id = parseInt(idParam, 10);
 
@@ -165,7 +226,7 @@ versesRouter.get("/:id", cacheControl(THIRTY_DAYS), async (c) => {
     return errorResponse(c, 404, "NOT_FOUND", `Verse '${id}' not found`);
   }
 
-  return success(c, verse[0]);
+  return success(c, { ...verse[0], text: cleanVerseText(verse[0].text) });
 });
 
 export { versesRouter };

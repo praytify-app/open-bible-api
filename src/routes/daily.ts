@@ -1,13 +1,40 @@
-import { Hono } from "hono";
+import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { dailyVerses, versions, verses, chapters, books } from "../db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
+import { DailyVerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
-const dailyRouter = new Hono();
+const dailyRouter = new OpenAPIHono();
 
-// Verse of the day
-dailyRouter.get("/", async (c) => {
+const dailyVerseRoute = createRoute({
+  method: "get",
+  path: "/",
+  tags: ["Daily"],
+  summary: "Verse of the day",
+  description: "Returns the verse of the day based on the current day of the year. Optionally specify a preferred version.",
+  request: {
+    query: z.object({
+      version: z.string().optional().openapi({ description: "Preferred version abbreviation", example: "KJV" }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Verse of the day",
+      content: {
+        "application/json": {
+          schema: z.object({ data: DailyVerseSchema }),
+        },
+      },
+    },
+    404: {
+      description: "No verse seeded for this day",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+dailyRouter.openapi(dailyVerseRoute, async (c) => {
   const versionParam = c.req.query("version");
 
   // Calculate day of year
@@ -37,8 +64,6 @@ dailyRouter.get("/", async (c) => {
 
   // If specific version requested and differs from seeded version, try to look it up
   if (versionParam && versionParam !== entry.versionAbbreviation) {
-    // Parse the reference to find the verse in the requested version
-    // For now, return the seeded version with a note
     const result = {
       dayOfYear: index,
       reference: entry.reference,

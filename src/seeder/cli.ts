@@ -5,7 +5,7 @@ import { db, queryClient } from "../db/client.js";
 import { languages, versions } from "../db/schema.js";
 import { sql, eq } from "drizzle-orm";
 import { fetchCatalog, filterByLicense } from "./catalog.js";
-import { runBatchImport, createBatchReport } from "./batch-runner.js";
+import { runBatchImport, createBatchReport, formatElapsed } from "./batch-runner.js";
 
 const program = new Command();
 
@@ -166,21 +166,44 @@ program
   .description("Import all eligible eBible.org translations")
   .option("-c, --concurrency <n>", "Max concurrent imports", "1")
   .option("-d, --delay <ms>", "Delay between imports in ms", "1000")
+  .option("--start-from <id>", "Skip translations before this ID in the catalog")
+  .option("--max-memory <mb>", "Pause and force GC when heap exceeds this MB threshold", "2048")
   .action(async (opts) => {
     try {
       console.log("Fetching eBible.org catalog...");
       const all = await fetchCatalog();
       const eligible = filterByLicense(all);
 
-      console.log(`Found ${eligible.length} eligible translations. Starting import...`);
+      let toImport = eligible;
+      if (opts.startFrom) {
+        const startIndex = eligible.findIndex(e => e.translationId === opts.startFrom);
+        if (startIndex === -1) {
+          console.error(`Translation "${opts.startFrom}" not found in eligible list.`);
+          process.exit(1);
+        }
+        toImport = eligible.slice(startIndex);
+        console.log(`Skipping to ${opts.startFrom} (index ${startIndex}), ${toImport.length} remaining...`);
+      }
 
-      const results = await runBatchImport(eligible, {
+      console.log(`Found ${toImport.length} eligible translations. Starting import...`);
+
+      const batchStart = Date.now();
+
+      const results = await runBatchImport(toImport, {
         concurrency: parseInt(opts.concurrency, 10),
         delay: parseInt(opts.delay, 10),
+        maxMemory: parseInt(opts.maxMemory, 10) * 1024 * 1024,
         onProgress: (result, index, total) => {
+          const elapsed = formatElapsed(Date.now() - batchStart);
           const pct = Math.round(((index + 1) / total) * 100);
+          const avgMs = (Date.now() - batchStart) / (index + 1);
+          const estRemaining = formatElapsed(avgMs * (total - index - 1));
           console.log(
-            `[${pct}%] ${result.translationId}: ${result.status}${result.verseCount ? ` (${result.verseCount} verses)` : ""}${result.reason ? ` — ${result.reason}` : ""}${result.error ? ` — ${result.error}` : ""}`
+            `[${pct}% ${index + 1}/${total}] ${result.translationId}: ${result.status}` +
+            `${result.verseCount ? ` (${result.verseCount} verses)` : ""}` +
+            `${result.reason ? ` — ${result.reason}` : ""}` +
+            `${result.error ? ` — ${result.error}` : ""}` +
+            ` | elapsed: ${elapsed} | est remaining: ${estRemaining}`
           );
         },
       });
@@ -226,13 +249,22 @@ program
 
       console.log(`Found ${eligible.length} eligible translations for "${code}". Starting import...`);
 
+      const batchStart = Date.now();
+
       const results = await runBatchImport(eligible, {
         concurrency: parseInt(opts.concurrency, 10),
         delay: parseInt(opts.delay, 10),
         onProgress: (result, index, total) => {
+          const elapsed = formatElapsed(Date.now() - batchStart);
           const pct = Math.round(((index + 1) / total) * 100);
+          const avgMs = (Date.now() - batchStart) / (index + 1);
+          const estRemaining = formatElapsed(avgMs * (total - index - 1));
           console.log(
-            `[${pct}%] ${result.translationId}: ${result.status}${result.verseCount ? ` (${result.verseCount} verses)` : ""}${result.reason ? ` — ${result.reason}` : ""}${result.error ? ` — ${result.error}` : ""}`
+            `[${pct}% ${index + 1}/${total}] ${result.translationId}: ${result.status}` +
+            `${result.verseCount ? ` (${result.verseCount} verses)` : ""}` +
+            `${result.reason ? ` — ${result.reason}` : ""}` +
+            `${result.error ? ` — ${result.error}` : ""}` +
+            ` | elapsed: ${elapsed} | est remaining: ${estRemaining}`
           );
         },
       });

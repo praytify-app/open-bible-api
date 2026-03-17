@@ -5,12 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file=.env src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node --env-file=.env dist/index.js",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx src/db/migrate.ts",
-    "seed": "tsx src/seeder/cli.ts",
+    "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
+    "seed": "tsx --env-file=.env --expose-gc src/seeder/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

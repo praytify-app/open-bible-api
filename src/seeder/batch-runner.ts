@@ -5,12 +5,23 @@
  * does not block others.
  */
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { versions } from "../db/schema.js";
 import { downloadAndParseEbible } from "./sources/ebible.js";
 import { seedVersion } from "./bulk-insert.js";
 import type { CatalogEntry } from "./catalog.js";
+
+export function formatElapsed(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m${seconds % 60}s`;
+  return `${seconds}s`;
+}
 
 export interface BatchResult {
   translationId: string;
@@ -37,6 +48,8 @@ export interface BatchOptions {
   force?: boolean;
   /** Called after each translation completes */
   onProgress?: (result: BatchResult, index: number, total: number) => void;
+  /** Max heap memory in bytes before forcing GC (requires --expose-gc) */
+  maxMemory?: number;
 }
 
 /**
@@ -121,6 +134,9 @@ export async function importSingleTranslation(
       }
     }
 
+    // Help GC by clearing parsed data
+    parsedBooks.length = 0;
+
     return {
       translationId: entry.translationId,
       status: "imported",
@@ -153,17 +169,40 @@ export async function runBatchImport(
   entries: CatalogEntry[],
   options: BatchOptions = {}
 ): Promise<BatchResult[]> {
-  const { concurrency = 1, delay = 0, force = false, onProgress } = options;
+  const { concurrency = 1, delay = 0, force = false, onProgress, maxMemory } = options;
   const results: BatchResult[] = [];
 
   if (concurrency <= 1) {
     // Sequential mode
+    const startTime = Date.now();
     for (let i = 0; i < entries.length; i++) {
       const result = await importSingleTranslation(entries[i], force);
       results.push(result);
 
       if (onProgress) {
         onProgress(result, i, entries.length);
+      }
+
+      // Write progress checkpoint
+      const progressPath = join(process.cwd(), ".cache", "seed-progress.json");
+      mkdirSync(dirname(progressPath), { recursive: true });
+      writeFileSync(progressPath, JSON.stringify({
+        lastTranslationId: entries[i].translationId,
+        completedIndex: i,
+        total: entries.length,
+        imported: results.filter(r => r.status === "imported").length,
+        skipped: results.filter(r => r.status === "skipped").length,
+        failed: results.filter(r => r.status === "failed").length,
+        timestamp: new Date().toISOString(),
+      }, null, 2));
+
+      // Force GC if memory exceeds threshold (requires node --expose-gc)
+      if (maxMemory && typeof globalThis.gc === "function") {
+        const heapUsed = process.memoryUsage().heapUsed;
+        if (heapUsed > maxMemory) {
+          console.log(`[gc] Heap ${Math.round(heapUsed / 1024 / 1024)}MB > ${Math.round(maxMemory / 1024 / 1024)}MB threshold, forcing GC...`);
+          globalThis.gc();
+        }
       }
 
       if (delay > 0 && i < entries.length - 1) {

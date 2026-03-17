@@ -26,10 +26,10 @@ export const versions = pgTable("versions", {
   languageId: uuid("language_id")
     .references(() => languages.id)
     .notNull(),
-  abbreviation: varchar("abbreviation", { length: 20 }).unique().notNull(),
+  abbreviation: varchar("abbreviation", { length: 100 }).unique().notNull(),
   name: varchar("name", { length: 200 }).notNull(),
   description: text("description"),
-  license: varchar("license", { length: 100 }),
+  license: text("license"),
   sourceUrl: varchar("source_url", { length: 500 }),
   canonType: varchar("canon_type", { length: 30 }).default("protestant").notNull(),
   verseCount: integer("verse_count").default(0).notNull(),
@@ -87,5 +87,5 @@ export const dailyVerses = pgTable("daily_verses", {
   dayOfYear: smallint("day_of_year").unique().notNull(),
   reference: varchar("reference", { length: 100 }).notNull(),
   text: text("text").notNull(),
-  versionAbbreviation: varchar("version_abbreviation", { length: 20 }).notNull(),
+  versionAbbreviation: varchar("version_abbreviation", { length: 100 }).notNull(),
 });

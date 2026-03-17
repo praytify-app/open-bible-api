@@ -6,6 +6,8 @@ vi.mock("../../src/db/client.js", () => {
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
+    transaction: vi.fn(),
   };
 
   // Chainable select mock
@@ -29,6 +31,29 @@ vi.mock("../../src/db/client.js", () => {
     where: vi.fn().mockResolvedValue(undefined),
   };
   mockDb.update.mockReturnValue(updateChain);
+
+  // Chainable delete mock
+  const deleteChain = {
+    where: vi.fn().mockResolvedValue(undefined),
+  };
+  mockDb.delete.mockReturnValue(deleteChain);
+
+  // Transaction mock — creates a tx object with same chainable methods and calls the callback
+  mockDb.transaction.mockImplementation(async (fn: Function) => {
+    const txInsertChain = {
+      values: vi.fn().mockReturnThis(),
+      returning: vi.fn().mockResolvedValue([{ id: "tx-mock-id" }]),
+    };
+    const txUpdateChain = {
+      set: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue(undefined),
+    };
+    const tx = {
+      insert: vi.fn().mockReturnValue(txInsertChain),
+      update: vi.fn().mockReturnValue(txUpdateChain),
+    };
+    return fn(tx);
+  });
 
   return { db: mockDb };
 });
@@ -105,17 +130,27 @@ describe("seedVersion idempotency", () => {
 
     (db.select as ReturnType<typeof vi.fn>).mockReturnValue(selectChain);
 
-    const insertChain = {
-      values: vi.fn().mockReturnThis(),
+    // Track the tx insert values inside the transaction
+    let txInsertValues: unknown = null;
+    const txInsertChain = {
+      values: vi.fn().mockImplementation(function (this: unknown, vals: unknown) {
+        txInsertValues = vals;
+        return txInsertChain;
+      }),
       returning: vi.fn().mockResolvedValue([{ id: "new-version-id" }]),
     };
-    (db.insert as ReturnType<typeof vi.fn>).mockReturnValue(insertChain);
-
-    const updateChain = {
+    const txUpdateChain = {
       set: vi.fn().mockReturnThis(),
       where: vi.fn().mockResolvedValue(undefined),
     };
-    (db.update as ReturnType<typeof vi.fn>).mockReturnValue(updateChain);
+
+    (db.transaction as ReturnType<typeof vi.fn>).mockImplementation(async (fn: Function) => {
+      const tx = {
+        insert: vi.fn().mockReturnValue(txInsertChain),
+        update: vi.fn().mockReturnValue(txUpdateChain),
+      };
+      return fn(tx);
+    });
 
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -128,8 +163,8 @@ describe("seedVersion idempotency", () => {
 
     await seedVersion(optionsWithAttribution);
 
-    // The insert should have been called with attribution fields in the values
-    expect(insertChain.values).toHaveBeenCalledWith(
+    // The transaction's insert should have been called with attribution fields in the values
+    expect(txInsertValues).toEqual(
       expect.objectContaining({
         attribution: "Public Domain",
         attributionUrl: "https://example.com",

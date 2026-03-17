@@ -5,7 +5,7 @@
  * by open-source-compatible licenses (PD, CC BY, CC BY-SA).
  */
 
-export type LicenseType = "PD" | "CC_BY" | "CC_BY_SA" | "OTHER";
+export type LicenseType = "PD" | "CC_BY" | "CC_BY_SA" | "COPYRIGHTED_REDISTRIBUTABLE" | "OTHER";
 
 export interface CatalogEntry {
   translationId: string;
@@ -63,6 +63,14 @@ export function classifyLicense(license: string): LicenseType {
     lower.includes("cc-by")
   ) {
     return "CC_BY";
+  }
+
+  if (lower.includes("proprietary")) {
+    return "OTHER";
+  }
+
+  if (lower.includes("copyright")) {
+    return "COPYRIGHTED_REDISTRIBUTABLE";
   }
 
   return "OTHER";
@@ -179,13 +187,13 @@ export function parseCatalogCsv(csv: string): CatalogEntry[] {
 }
 
 /**
- * Filter catalog entries to only open-license translations.
- * Keeps: PD, CC_BY, CC_BY_SA
+ * Filter catalog entries to only redistributable translations.
+ * Keeps: PD, CC_BY, CC_BY_SA, COPYRIGHTED_REDISTRIBUTABLE
  * Excludes: OTHER (NC, ND, proprietary, etc.)
  */
 export function filterByLicense(entries: CatalogEntry[]): CatalogEntry[] {
-  const allowed: Set<LicenseType> = new Set(["PD", "CC_BY", "CC_BY_SA"]);
-  return entries.filter((entry) => allowed.has(entry.licenseType));
+  const excluded: Set<LicenseType> = new Set(["OTHER"]);
+  return entries.filter((entry) => !excluded.has(entry.licenseType));
 }
 
 /**

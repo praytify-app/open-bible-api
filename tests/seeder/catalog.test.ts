@@ -54,6 +54,11 @@ describe("classifyLicense", () => {
   it("classifies proprietary as OTHER", () => {
     expect(classifyLicense("Copyright © Proprietary")).toBe("OTHER");
   });
+
+  it("classifies Wycliffe copyright as COPYRIGHTED_REDISTRIBUTABLE", () => {
+    expect(classifyLicense("Copyright © 2011 Wycliffe Bible Translators, Inc.")).toBe("COPYRIGHTED_REDISTRIBUTABLE");
+    expect(classifyLicense("Copyright © 2024 The Word for the World International")).toBe("COPYRIGHTED_REDISTRIBUTABLE");
+  });
 });
 
 describe("parseCsvLine", () => {
@@ -93,7 +98,7 @@ describe("parseCatalogCsv", () => {
   it("parses the sample CSV into entries", () => {
     entries = parseCatalogCsv(csv);
     // 10 data rows, but 1 is not redistributable (deulut has Redistributable=False)
-    expect(entries.length).toBe(9);
+    expect(entries.length).toBe(10);
   });
 
   it("parses language fields correctly", () => {
@@ -153,20 +158,15 @@ describe("parseCatalogCsv", () => {
 });
 
 describe("filterByLicense", () => {
-  it("keeps PD, CC_BY, CC_BY_SA and excludes OTHER", () => {
+  it("keeps PD, CC_BY, CC_BY_SA, COPYRIGHTED_REDISTRIBUTABLE and excludes OTHER", () => {
     const csv = readFileSync(FIXTURE_PATH, "utf-8");
     const all = parseCatalogCsv(csv);
     const filtered = filterByLicense(all);
-
-    // From 9 redistributable entries: engkjv(PD), engweb(PD), sparvg(CC_BY_SA),
-    // fralsg(PD), yorulb(CC_BY), arbnav(PD), zhocuv(OTHER-NC), ibobib(CC_BY_SA), porara(OTHER-ND)
-    // That's 7 allowed, 2 excluded (zhocuv + porara)
-    expect(filtered.length).toBe(7);
-
+    // 10 redistributable - 2 excluded (zhocuv NC + porara ND) = 8
+    expect(filtered.length).toBe(8);
     const ids = filtered.map((e) => e.translationId);
     expect(ids).toContain("engkjv");
-    expect(ids).toContain("yorulb");
-    expect(ids).toContain("ibobib");
+    expect(ids).toContain("aak");
     expect(ids).not.toContain("zhocuv");
     expect(ids).not.toContain("porara");
   });

@@ -79,7 +79,7 @@ const getLanguageRoute = createRoute({
 
 // --- Handlers ---
 
-languagesRouter.openapi(listLanguagesRoute, async (c) => {
+languagesRouter.openapi(listLanguagesRoute, async (c): Promise<any> => {
   const { page, limit, offset } = parsePagination(c);
 
   const [rows, totalResult] = await Promise.all([
@@ -102,7 +102,7 @@ languagesRouter.openapi(listLanguagesRoute, async (c) => {
   });
 });
 
-languagesRouter.openapi(getLanguageRoute, async (c) => {
+languagesRouter.openapi(getLanguageRoute, async (c): Promise<any> => {
   const code = c.req.param("code");
 
   const language = await db

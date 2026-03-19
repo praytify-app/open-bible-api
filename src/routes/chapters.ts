@@ -79,7 +79,7 @@ const versesByChapterIdRoute = createRoute({
 
 // --- Handlers ---
 
-chaptersRouter.openapi(versesByRefRoute, async (c) => {
+chaptersRouter.openapi(versesByRefRoute, async (c): Promise<any> => {
   const versionAbbr = c.req.param("version");
   const bookCode = c.req.param("bookCode");
   const chapter = c.req.param("chapter");

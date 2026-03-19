@@ -46,7 +46,7 @@ const searchRoute = createRoute({
   },
 });
 
-searchRouter.openapi(searchRoute, async (c) => {
+searchRouter.openapi(searchRoute, async (c): Promise<any> => {
   const q = c.req.query("q");
   const versionParam = c.req.query("version");
   const languageParam = c.req.query("language");

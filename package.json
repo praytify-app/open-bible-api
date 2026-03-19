@@ -25,7 +25,9 @@
   "dependencies": {
     "@hono/node-server": "^1.19.11",
     "@hono/zod-openapi": "^1.2.2",
+    "@scalar/core": "^0.4.4",
     "@scalar/hono-api-reference": "^0.10.3",
+    "@scalar/types": "^0.7.4",
     "commander": "^14.0.3",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.12.8",

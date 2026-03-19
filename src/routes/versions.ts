@@ -124,7 +124,7 @@ const downloadVersionRoute = createRoute({
                 name: z.string(),
                 license: z.string().nullable(),
               }),
-              books: z.record(z.record(z.record(z.string()))),
+              books: z.record(z.string(), z.record(z.string(), z.record(z.string(), z.string()))),
               attribution: z.string().optional(),
             }),
           }),
@@ -276,7 +276,7 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
   return success(c, bookRows);
 });
 
-versionsRouter.openapi(downloadVersionRoute, async (c) => {
+versionsRouter.openapi(downloadVersionRoute, async (c): Promise<any> => {
   const id = c.req.param("id");
 
   const version = await db

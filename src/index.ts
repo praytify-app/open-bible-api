@@ -64,7 +64,7 @@ app.doc("/api/v1/openapi.json", {
 
 // Interactive API docs
 app.get("/docs", apiReference({
-  spec: { url: "/api/v1/openapi.json" },
+  url: "/api/v1/openapi.json",
   theme: "purple",
   layout: "modern",
 }));

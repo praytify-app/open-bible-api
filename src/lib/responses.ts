@@ -11,12 +11,12 @@ export function success<T>(c: Context, data: T, meta?: PaginationMeta) {
   return c.json({
     data,
     ...(meta ? { meta } : {}),
-  });
+  }, 200 as const);
 }
 
-export function errorResponse(
+export function errorResponse<S extends 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500>(
   c: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500,
+  status: S,
   code: string,
   message: string
 ) {

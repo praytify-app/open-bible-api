@@ -3,7 +3,7 @@
 ## Required env vars in Dokploy:
 ##   DATABASE_URL   — PostgreSQL connection string
 ##   ADMIN_TOKEN    — Secret token for admin endpoints
-##   API_DOMAIN     — e.g. bible.praytify.app
+##   API_DOMAIN     — e.g. praytify.bible
 ##   CORS_ORIGINS   — Allowed origins (e.g. https://praytify.app)
 
 services:

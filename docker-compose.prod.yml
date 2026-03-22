@@ -1,0 +1,43 @@
+## Open Bible API — Production Docker Compose (Dokploy)
+## Pulls pre-built image from Docker Hub.
+##
+## Required env vars in Dokploy:
+##   DATABASE_URL  — PostgreSQL connection string
+##   ADMIN_TOKEN   — Secret token for admin endpoints
+##   CORS_ORIGINS  — Allowed origins (e.g. https://praytify.app)
+
+services:
+  api:
+    image: novashock/open-bible-api:latest
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - PORT=3100
+      - HOST=0.0.0.0
+      - ADMIN_TOKEN=${ADMIN_TOKEN}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://praytify.app}
+      - RATE_LIMIT=${RATE_LIMIT:-100}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3100/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bible-api.rule=Host(`bible.praytify.app`)"
+      - "traefik.http.routers.bible-api.entrypoints=websecure"
+      - "traefik.http.routers.bible-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bible-api.loadbalancer.server.port=3100"

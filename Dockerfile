@@ -22,10 +22,10 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/package.json ./
-COPY drizzle ./drizzle
+COPY --from=deps --chown=appuser:appgroup /app/node_modules ./node_modules
+COPY --from=build --chown=appuser:appgroup /app/dist ./dist
+COPY --from=build --chown=appuser:appgroup /app/package.json ./
+COPY --chown=appuser:appgroup drizzle ./drizzle
 
 USER appuser
 EXPOSE 3100

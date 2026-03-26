@@ -4,7 +4,6 @@ import { versions, languages, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql, and } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
-import { API_BIBLE_VERSIONS } from "../lib/api-bible-config.js";
 import {
   VersionSchema,
   BookSchema,
@@ -189,28 +188,18 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
 
   const dbTotal = totalResult[0]?.total ?? 0;
 
-  const apiBibleEntries = Object.entries(API_BIBLE_VERSIONS).map(
-    ([abbreviation, config]) => ({
-      id: `api-bible-${abbreviation}`,
-      abbreviation,
-      name: config.name,
-      language: config.language,
-      languageCode: config.languageCode,
-      source: "api-bible" as const,
-      isOfflineCapable: false,
-      verseCount: null,
-    }),
-  );
+  // Filter out self-hosted versions that have no verse data (phantom entries)
+  const dbVersionsWithSource = rows
+    .filter((v: any) => v.verseCount > 0)
+    .map((v: any) => ({
+      ...v,
+      source: "self-hosted" as const,
+      isOfflineCapable: true,
+      attributionRequired: v.licenseType !== "PD",
+    }));
 
-  const dbVersionsWithSource = rows.map((v: any) => ({
-    ...v,
-    source: "self-hosted" as const,
-    isOfflineCapable: true,
-    attributionRequired: v.licenseType !== "PD",
-  }));
-
-  const allVersions = [...dbVersionsWithSource, ...apiBibleEntries];
-  const total = dbTotal + apiBibleEntries.length;
+  const allVersions = dbVersionsWithSource;
+  const total = dbVersionsWithSource.length;
 
   return success(c, allVersions, {
     page,

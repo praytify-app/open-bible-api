@@ -5,8 +5,6 @@ import { eq, and } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
-import { isApiBibleVersion } from "../lib/api-bible-config.js";
-import { fetchApiBibleVerses } from "../lib/api-bible.js";
 import { VerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
 const THIRTY_DAYS = 2592000;
@@ -87,18 +85,6 @@ chaptersRouter.openapi(versesByRefRoute, async (c): Promise<any> => {
 
   if (isNaN(chapterNum)) {
     return errorResponse(c, 400, "BAD_REQUEST", "Chapter must be a number");
-  }
-
-  // --- api.bible proxy (copyrighted versions) ---
-  if (isApiBibleVersion(versionAbbr)) {
-    try {
-      const proxyVerses = await fetchApiBibleVerses(versionAbbr, bookCode, chapterNum);
-      c.header("Cache-Control", "no-store");
-      return c.json({ data: proxyVerses });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "api.bible proxy error";
-      return c.json({ error: message }, 502);
-    }
   }
 
   // Find the version

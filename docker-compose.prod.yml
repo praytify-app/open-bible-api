@@ -8,7 +8,7 @@
 
 services:
   api:
-    image: novashock/open-bible-api:1.1.0
+    image: novashock/open-bible-api:1.2.0
     restart: unless-stopped
     environment:
       - NODE_ENV=production

@@ -29,6 +29,7 @@ const listVersionsRoute = createRoute({
   request: {
     query: PaginationQuerySchema.extend({
       language: z.string().optional().openapi({ description: "Filter by language code", example: "eng" }),
+      search: z.string().min(2).optional().openapi({ description: "Search versions by name or abbreviation", example: "web" }),
     }),
   },
   responses: {
@@ -142,8 +143,10 @@ const downloadVersionRoute = createRoute({
 versionsRouter.openapi(listVersionsRoute, async (c) => {
   const { page, limit, offset } = parsePagination(c);
   const languageFilter = c.req.query("language");
+  const searchFilter = c.req.query("search");
 
-  let whereClause;
+  const conditions = [];
+
   if (languageFilter) {
     const lang = await db
       .select({ id: languages.id })
@@ -154,8 +157,25 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
     if (lang.length === 0) {
       return success(c, [], { page, limit, total: 0, totalPages: 0 });
     }
-    whereClause = eq(versions.languageId, lang[0].id);
+    conditions.push(eq(versions.languageId, lang[0].id));
   }
+
+  // Search by name or abbreviation (case-insensitive)
+  // Note: ilike with leading wildcard cannot use B-tree index.
+  // At ~1000 versions this is <5ms. If scale increases to 10k+,
+  // add a pg_trgm GIN index on name and abbreviation.
+  if (searchFilter) {
+    const pattern = `%${searchFilter}%`;
+    conditions.push(
+      sql`(${versions.name} ILIKE ${pattern} OR ${versions.abbreviation} ILIKE ${pattern})`
+    );
+  }
+
+  const whereClause = conditions.length > 0
+    ? conditions.length === 1
+      ? conditions[0]
+      : and(...conditions)
+    : undefined;
 
   const [rows, totalResult] = await Promise.all([
     db

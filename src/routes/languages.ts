@@ -82,10 +82,31 @@ const getLanguageRoute = createRoute({
 languagesRouter.openapi(listLanguagesRoute, async (c): Promise<any> => {
   const { page, limit, offset } = parsePagination(c);
 
+  // Subquery: count versions with actual verse data per language
+  const versionCounts = db
+    .select({
+      languageId: versions.languageId,
+      versionCount: count().as("version_count"),
+    })
+    .from(versions)
+    .where(sql`${versions.verseCount} > 0`)
+    .groupBy(versions.languageId)
+    .as("vc");
+
   const [rows, totalResult] = await Promise.all([
     db
-      .select()
+      .select({
+        id: languages.id,
+        code: languages.code,
+        name: languages.name,
+        nativeName: languages.nativeName,
+        script: languages.script,
+        direction: languages.direction,
+        createdAt: languages.createdAt,
+        versionCount: sql<number>`COALESCE(${versionCounts.versionCount}, 0)`,
+      })
       .from(languages)
+      .leftJoin(versionCounts, eq(languages.id, versionCounts.languageId))
       .orderBy(languages.name)
       .limit(limit)
       .offset(offset),

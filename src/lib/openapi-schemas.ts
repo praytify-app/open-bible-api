@@ -10,6 +10,7 @@ export const LanguageSchema = z.object({
   script: z.string().nullable().openapi({ description: "Script used (e.g. Latin, Cyrillic)" }),
   direction: z.enum(["ltr", "rtl"]).openapi({ description: "Text direction" }),
   createdAt: z.string().datetime().openapi({ description: "ISO 8601 creation timestamp" }),
+  versionCount: z.number().int().openapi({ description: "Number of Bible versions available in this language" }),
 });
 
 export const VersionSchema = z.object({

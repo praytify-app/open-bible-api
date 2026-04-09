@@ -365,4 +365,58 @@ program
     }
   });
 
+program
+  .command("seed-esv")
+  .description("Fetch and seed the ESV Bible from the Crossway API")
+  .option("--start-from <bookCode>", "Resume from a specific book (e.g. PSA)")
+  .option("--force", "Overwrite existing ESV data")
+  .action(async (opts) => {
+    const apiToken = process.env.ESV_API_TOKEN;
+    if (!apiToken) {
+      console.error("ESV_API_TOKEN environment variable is required");
+      process.exit(1);
+    }
+
+    console.log("Fetching ESV Bible from Crossway API...");
+    console.log("Rate: ~1 chapter/second (respecting 60 req/min limit)");
+    console.log("Estimated time: ~20 minutes for all 1,189 chapters\n");
+
+    const { fetchAllEsvChapters } = await import("./sources/esv.js");
+
+    const parsedBooks = await fetchAllEsvChapters(
+      apiToken,
+      (progress) => {
+        const pct = ((progress.chaptersCompleted / progress.totalChapters) * 100).toFixed(1);
+        process.stdout.write(
+          `\r[${pct}%] ${progress.currentBook} (${progress.chaptersCompleted}/${progress.totalChapters} chapters)`,
+        );
+      },
+      opts.startFrom,
+    );
+
+    console.log(`\n\nFetched ${parsedBooks.length} books. Seeding into database...`);
+
+    await seedVersion({
+      parsedBooks,
+      languageCode: "eng",
+      languageName: "English",
+      languageNativeName: undefined,
+      languageScript: "Latin",
+      languageDirection: "ltr",
+      abbreviation: "ESV",
+      name: "English Standard Version",
+      license: 'Scripture quotations are from the ESV® Bible (The Holy Bible, English Standard Version®), © 2001 by Crossway, a publishing ministry of Good News Publishers.',
+      sourceUrl: "https://api.esv.org",
+      attribution: "© 2001 by Crossway",
+      attributionUrl: "https://www.crossway.org",
+      licenseType: "COPYRIGHTED_REDISTRIBUTABLE",
+      hasAudio: true,
+      force: opts.force,
+    });
+
+    console.log("ESV Bible seeded successfully!");
+    await queryClient.end();
+    process.exit(0);
+  });
+
 program.parse();

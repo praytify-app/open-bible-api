@@ -37,6 +37,8 @@ export interface SeedVersionOptions {
   attributionUrl?: string;
   /** License type: PD, CC_BY, CC_BY_SA, OTHER */
   licenseType?: string;
+  /** Whether audio is available for this version */
+  hasAudio?: boolean;
 }
 
 /**
@@ -63,6 +65,7 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
     attribution,
     attributionUrl,
     licenseType,
+    hasAudio,
     force = false,
   } = options;
 
@@ -123,6 +126,7 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
         attribution: attribution ?? null,
         attributionUrl: attributionUrl ?? null,
         licenseType: licenseType ?? "PD",
+        hasAudio: hasAudio ?? false,
         verseCount: 0,
       })
       .returning({ id: versions.id });

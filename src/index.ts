@@ -11,6 +11,7 @@ import { versesRouter } from "./routes/verses.js";
 import { searchRouter } from "./routes/search.js";
 import { dailyRouter } from "./routes/daily.js";
 import { adminRouter } from "./routes/admin.js";
+import { esvAudioRouter } from "./routes/esv-audio.js";
 
 const app = new OpenAPIHono();
 
@@ -45,6 +46,7 @@ app.route("/api/v1/verses", versesRouter);
 app.route("/api/v1/search", searchRouter);
 app.route("/api/v1/daily", dailyRouter);
 app.route("/api/v1/admin", adminRouter);
+app.route("/api/v1/esv/audio", esvAudioRouter);
 
 // OpenAPI spec endpoint
 app.doc("/api/v1/openapi.json", {

@@ -5,10 +5,11 @@
 ##   ADMIN_TOKEN    — Secret token for admin endpoints
 ##   API_DOMAIN     — e.g. praytify.bible
 ##   CORS_ORIGINS   — Allowed origins (e.g. https://praytify.app)
+##   ESV_API_TOKEN  — Crossway ESV API token (https://api.esv.org/)
 
 services:
   api:
-    image: novashock/open-bible-api:1.2.0
+    image: novashock/open-bible-api:1.3.0
     restart: unless-stopped
     environment:
       - NODE_ENV=production
@@ -18,6 +19,7 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://praytify.app}
       - RATE_LIMIT=${RATE_LIMIT:-100}
+      - ESV_API_TOKEN=${ESV_API_TOKEN}
     labels:
       - traefik.enable=true
       - traefik.http.routers.bible-api.rule=Host(`${API_DOMAIN}`)

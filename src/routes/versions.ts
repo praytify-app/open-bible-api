@@ -30,6 +30,7 @@ const listVersionsRoute = createRoute({
     query: PaginationQuerySchema.extend({
       language: z.string().optional().openapi({ description: "Filter by language code", example: "eng" }),
       search: z.string().min(2).optional().openapi({ description: "Search versions by name or abbreviation", example: "web" }),
+      hasAudio: z.coerce.boolean().optional().openapi({ description: "Filter to versions with audio available", example: "true" }),
     }),
   },
   responses: {
@@ -144,8 +145,16 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
   const { page, limit, offset } = parsePagination(c);
   const languageFilter = c.req.query("language");
   const searchFilter = c.req.query("search");
+  const hasAudioFilter = c.req.query("hasAudio");
 
   const conditions = [];
+
+  // Filter out phantom entries (no verse data)
+  conditions.push(sql`${versions.verseCount} > 0`);
+
+  if (hasAudioFilter === "true") {
+    conditions.push(eq(versions.hasAudio, true));
+  }
 
   if (languageFilter) {
     const lang = await db
@@ -208,9 +217,7 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
 
   const dbTotal = totalResult[0]?.total ?? 0;
 
-  // Filter out self-hosted versions that have no verse data (phantom entries)
   const dbVersionsWithSource = rows
-    .filter((v: any) => v.verseCount > 0)
     .map((v: any) => ({
       ...v,
       source: "self-hosted" as const,

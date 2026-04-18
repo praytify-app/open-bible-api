@@ -3,6 +3,7 @@ import { db } from "../db/client.js";
 import { dailyVerses, versions, verses, chapters, books } from "../db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
+import { canonicalizeVersionAbbreviation } from "../lib/version-abbreviations.js";
 import { DailyVerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
 const dailyRouter = new OpenAPIHono();
@@ -64,13 +65,16 @@ dailyRouter.openapi(dailyVerseRoute, async (c) => {
 
   // If specific version requested and differs from seeded version, try to look it up
   if (versionParam && versionParam !== entry.versionAbbreviation) {
+    const canonicalEntryVersion = canonicalizeVersionAbbreviation(
+      entry.versionAbbreviation
+    );
     const result = {
       dayOfYear: index,
       reference: entry.reference,
       text: entry.text,
-      version: entry.versionAbbreviation,
+      version: canonicalEntryVersion,
       requestedVersion: versionParam,
-      note: `Verse of the day is seeded in ${entry.versionAbbreviation}. Requested version: ${versionParam}.`,
+      note: `Verse of the day is seeded in ${canonicalEntryVersion}. Requested version: ${versionParam}.`,
     };
 
     // Cache until midnight UTC
@@ -102,7 +106,7 @@ dailyRouter.openapi(dailyVerseRoute, async (c) => {
     dayOfYear: index,
     reference: entry.reference,
     text: entry.text,
-    version: entry.versionAbbreviation,
+    version: canonicalizeVersionAbbreviation(entry.versionAbbreviation),
   });
 });
 

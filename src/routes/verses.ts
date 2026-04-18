@@ -1,11 +1,15 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { verses, chapters, books, versions, languages } from "../db/schema.js";
-import { eq, and, sql, ilike } from "drizzle-orm";
+import { eq, and, sql, ilike, inArray } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
 import { parseReference } from "../lib/reference-parser.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
+import {
+  canonicalizeVersionAbbreviation,
+  getVersionAbbreviationCandidates,
+} from "../lib/version-abbreviations.js";
 import { VerseSchema, VerseRefQuerySchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
 const THIRTY_DAYS = 2592000;
@@ -104,7 +108,9 @@ versesRouter.openapi(verseRefRoute, async (c) => {
     const ver = await db
       .select()
       .from(versions)
-      .where(eq(versions.abbreviation, versionCode))
+      .where(
+        inArray(versions.abbreviation, getVersionAbbreviationCandidates(versionCode))
+      )
       .limit(1);
 
     if (ver.length === 0) {
@@ -187,7 +193,7 @@ versesRouter.openapi(verseRefRoute, async (c) => {
 
     result[versionCode] = {
       reference: ref,
-      version: versionCode,
+      version: canonicalizeVersionAbbreviation(v.abbreviation),
       verses: verseQuery.map((v: any) => ({ ...v, text: cleanVerseText(v.text) })),
       license: v.license,
       ...(attribution ? { attribution } : {}),

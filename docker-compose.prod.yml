@@ -6,10 +6,12 @@
 ##   API_DOMAIN     — e.g. praytify.bible
 ##   CORS_ORIGINS   — Allowed origins (e.g. https://praytify.app)
 ##   ESV_API_TOKEN  — Crossway ESV API token (https://api.esv.org/)
+## Optional:
+##   OPEN_BIBLE_API_IMAGE — Override image tag for a rollout
 
 services:
   api:
-    image: novashock/open-bible-api:1.3.0
+    image: ${OPEN_BIBLE_API_IMAGE:-novashock/open-bible-api:1.3.0}
     restart: unless-stopped
     environment:
       - NODE_ENV=production

@@ -111,6 +111,9 @@ docker compose up --build -d
 
 This starts both PostgreSQL and the API. You still need to run migrations and seeding against the running containers.
 
+For the canonical English abbreviation rollout on production, use
+[PRODUCTION_CANONICAL_ENGLISH_ROLLOUT.md](/Users/jkolade/sireskay/github/open-bible-api/PRODUCTION_CANONICAL_ENGLISH_ROLLOUT.md).
+
 ## API Documentation
 
 All endpoints are prefixed with `/api/v1`.

@@ -118,6 +118,35 @@ describe("parseCatalogCsv", () => {
     expect(kjv!.abbreviation).toBe("KJV");
   });
 
+  it("uses canonical overrides for known English translation ids", () => {
+    const customCsv = [
+      '"languageCode","translationId","languageName","languageNameInEnglish","dialect","homeDomain","title","description","Redistributable","Copyright","UpdateDate","publicationURL","OTbooks","OTchapters","OTverses","NTbooks","NTchapters","NTverses","DCbooks","DCchapters","DCverses","FCBHID","Certified","inScript","swordName","rodCode","textDirection","downloadable","font","shortTitle","PODISBN","script","sourceDate"',
+      '"eng","eng-asv","English","English","","ebible.org","American Standard Version (1901)","","True","Public Domain","2024-01-01","https://ebible.org/Bible/details.php?id=eng-asv","39","929","23145","27","260","7957","0","0","0","","True","","","","ltr","True","","","","Latin","2024-01-01"',
+      '"eng","engbsb","English","English","","ebible.org","Berean Standard Bible","","True","Public Domain","2024-01-01","https://ebible.org/bible/details.php?id=engbsb","39","929","23145","27","260","7957","0","0","0","","True","","","","ltr","True","","","","Latin","2024-01-01"',
+      '"eng","engmsb","English","English","","ebible.org","Majority Standard Bible","","True","Public Domain","2024-01-01","https://ebible.org/details.php?id=engmsb","39","929","23145","27","260","7957","0","0","0","","True","","","","ltr","True","","","","Latin","2024-01-01"',
+      '"eng","engoebus","English","English","","ebible.org","Open English Bible (U. S. spelling)","","True","Public Domain","2024-01-01","https://ebible.org/Bible/details.php?id=engoebus","39","929","23145","27","260","7957","0","0","0","","True","","","","ltr","True","","","","Latin","2024-01-01"',
+      '"eng","engwebu","English","English","","ebible.org","World English Bible Updated","","True","Public Domain","2024-01-01","https://ebible.org/bible/details.php?id=engwebu","39","929","23145","27","260","7957","0","0","0","","True","","","","ltr","True","","","","Latin","2024-01-01"',
+    ].join("\n");
+
+    const customEntries = parseCatalogCsv(customCsv);
+
+    expect(customEntries.find((e) => e.translationId === "eng-asv")?.abbreviation).toBe(
+      "ASV"
+    );
+    expect(customEntries.find((e) => e.translationId === "engbsb")?.abbreviation).toBe(
+      "BSB"
+    );
+    expect(customEntries.find((e) => e.translationId === "engmsb")?.abbreviation).toBe(
+      "MSB"
+    );
+    expect(customEntries.find((e) => e.translationId === "engoebus")?.abbreviation).toBe(
+      "OEB"
+    );
+    expect(customEntries.find((e) => e.translationId === "engwebu")?.abbreviation).toBe(
+      "WEBU"
+    );
+  });
+
   it("classifies licenses correctly", () => {
     entries = parseCatalogCsv(csv);
     const kjv = entries.find((e) => e.translationId === "engkjv");

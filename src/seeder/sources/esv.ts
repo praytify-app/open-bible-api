@@ -3,6 +3,7 @@
 import { fetchPassageText, type EsvClientOptions } from "../../services/esv-client.js";
 import { parseEsvPassage } from "../../services/esv-parser.js";
 import { BOOK_METADATA } from "../book-metadata.js";
+import type { ParsedBook, ParsedChapter, ParsedVerse } from "../usfm-parser.js";
 
 // Re-export the ParsedBook type structure for reference.
 // The actual type comes from usfm-parser.ts but we match its shape.
@@ -58,9 +59,9 @@ export async function fetchAllEsvChapters(
   apiToken: string,
   onProgress?: (progress: EsvSeederProgress) => void,
   startFromBook?: string,
-): Promise<Array<{ bookCode: string; name: string; chapters: Array<{ number: number; verses: Array<{ number: number; text: string }> }> }>> {
+) : Promise<ParsedBook[]> {
   const options: EsvClientOptions = { apiToken, requestDelayMs: 1100 };
-  const books: Array<{ bookCode: string; name: string; chapters: Array<{ number: number; verses: Array<{ number: number; text: string }> }> }> = [];
+  const books: ParsedBook[] = [];
   const totalChapters = Object.values(CHAPTER_COUNTS).reduce((a, b) => a + b, 0);
   let chaptersCompleted = 0;
   let started = !startFromBook;
@@ -78,7 +79,7 @@ export async function fetchAllEsvChapters(
     }
 
     const bookName = BOOK_NAMES[meta.code] ?? meta.englishName;
-    const parsedChapters: Array<{ number: number; verses: Array<{ number: number; text: string }> }> = [];
+    const parsedChapters: ParsedChapter[] = [];
 
     for (let ch = 1; ch <= chapterCount; ch++) {
       const reference = `${bookName} ${ch}`;
@@ -86,10 +87,14 @@ export async function fetchAllEsvChapters(
         const response = await fetchPassageText(reference, options);
         const passageText = response.passages[0] ?? "";
         const verses = parseEsvPassage(passageText);
+        const parsedVerses: ParsedVerse[] = verses.map((v) => ({
+          number: v.number,
+          text: v.text,
+        }));
 
         parsedChapters.push({
           number: ch,
-          verses: verses.map((v) => ({ number: v.number, text: v.text })),
+          verses: parsedVerses,
         });
 
         chaptersCompleted++;
@@ -108,7 +113,7 @@ export async function fetchAllEsvChapters(
       }
     }
 
-    books.push({ bookCode: meta.code, name: bookName, chapters: parsedChapters });
+    books.push({ bookCode: meta.code, bookName, chapters: parsedChapters });
   }
 
   return books;

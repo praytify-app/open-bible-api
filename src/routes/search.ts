@@ -1,10 +1,14 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { verses, chapters, books, versions, languages } from "../db/schema.js";
-import { eq, and, sql, ilike } from "drizzle-orm";
+import { eq, and, sql, ilike, inArray } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
 import { PG_DICTIONARIES, getPgDictionary } from "../lib/pg-dictionaries.js";
+import {
+  canonicalizeVersionAbbreviation,
+  getVersionAbbreviationCandidates,
+} from "../lib/version-abbreviations.js";
 import { SearchQuerySchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
 const ONE_HOUR = 3600;
@@ -76,7 +80,9 @@ searchRouter.openapi(searchRoute, async (c): Promise<any> => {
     const ver = await db
       .select({ id: versions.id })
       .from(versions)
-      .where(eq(versions.abbreviation, versionParam));
+      .where(
+        inArray(versions.abbreviation, getVersionAbbreviationCandidates(versionParam))
+      );
 
     if (ver.length === 0) {
       return errorResponse(c, 404, "NOT_FOUND", `Version '${versionParam}' not found`);
@@ -170,14 +176,24 @@ searchRouter.openapi(searchRoute, async (c): Promise<any> => {
     `);
   }
 
-  return success(c, results);
+  return success(
+    c,
+    results.map((row: any) => ({
+      ...row,
+      version_abbreviation: canonicalizeVersionAbbreviation(
+        row.version_abbreviation
+      ),
+    }))
+  );
 });
 
 async function getDictionaryForVersion(abbreviation: string): Promise<string> {
   const ver = await db
     .select({ languageId: versions.languageId })
     .from(versions)
-    .where(eq(versions.abbreviation, abbreviation))
+    .where(
+      inArray(versions.abbreviation, getVersionAbbreviationCandidates(abbreviation))
+    )
     .limit(1);
 
   if (ver.length === 0) return "simple";

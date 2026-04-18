@@ -173,7 +173,7 @@ export function parseCatalogCsv(csv: string): CatalogEntry[] {
       languageNativeName,
       languageScript: script,
       languageDirection: textDirection,
-      abbreviation: shortTitle || translationId,
+      abbreviation: deriveAbbreviation(translationId, shortTitle),
       name: title,
       license: copyright,
       licenseType: classifyLicense(copyright),
@@ -184,6 +184,89 @@ export function parseCatalogCsv(csv: string): CatalogEntry[] {
   }
 
   return entries;
+}
+
+/**
+ * Well-known abbreviation overrides for common translations.
+ * Maps eBible translationId → standard abbreviation.
+ */
+const KNOWN_ABBREVIATIONS: Record<string, string> = {
+  engkjv: "KJV",
+  "eng-asv": "ASV",
+  engkjvcpb: "KJVA",
+  engbsb: "BSB",
+  engmsb: "MSB",
+  engwebp: "WEB",
+  engwebu: "WEBU",
+  engwebpb: "WEBA",
+  engwmb: "WMB",
+  engwmbb: "WMBA",
+  engoebcw: "OEB-CW",
+  engoebcwl: "OEB-US",
+  engoebus: "OEB",
+  engBBE: "BBE",
+  engDBY: "DBY",
+  engLEBP: "LEB",
+  engYLT: "YLT",
+  engULB: "ULB",
+  engUST: "UST",
+  eng_ls: "LSV",
+  engcover: "COVER",
+  engfbv: "FBV",
+  engrev: "REV",
+  engtcent: "TCENT",
+  engf35: "F35",
+  engtfv: "TFV",
+  spaRVG: "RVG",
+  spablm: "BLM",
+  fraLSG: "LSG",
+  deuelo: "ELO",
+  porARA: "ARA",
+  porNAA: "NAA",
+  rus_synod: "RST",
+  arb_vd: "AVD",
+  cmn_cu: "CUV",
+  hin_irv: "IRVHIN",
+  jpn_kougo: "KOUGO",
+  kor_krv: "KRV",
+  swh_ulb: "SWULB",
+  yorBSN: "BSN",
+  hau_bib: "HAUSA",
+  ibo_bib: "IGBO",
+};
+
+/**
+ * Derive a short abbreviation from the eBible translationId.
+ *
+ * Strategy:
+ * 1. Check known overrides map
+ * 2. Strip the language prefix (first 3 chars) and uppercase the remainder
+ * 3. Fall back to translationId uppercased if too short
+ */
+function deriveAbbreviation(translationId: string, shortTitle: string): string {
+  // Check known overrides
+  if (KNOWN_ABBREVIATIONS[translationId]) {
+    return KNOWN_ABBREVIATIONS[translationId];
+  }
+
+  // If shortTitle is already short (≤ 10 chars, no spaces), use it
+  if (shortTitle && shortTitle.length <= 10 && !shortTitle.includes(" ")) {
+    return shortTitle.toUpperCase();
+  }
+
+  // Strip language prefix (e.g. "engkjv" → "kjv", "spaRVG" → "RVG")
+  // eBible translationIds typically start with a 3-letter ISO code
+  if (translationId.length > 3) {
+    const suffix = translationId.slice(3);
+    // Clean up: remove underscores, uppercase
+    const cleaned = suffix.replace(/[_-]/g, "").toUpperCase();
+    if (cleaned.length >= 2) {
+      return cleaned;
+    }
+  }
+
+  // Last resort: uppercase the full translationId
+  return translationId.toUpperCase();
 }
 
 /**

@@ -1,9 +1,10 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { chapters, verses, books, versions } from "../db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
+import { getVersionAbbreviationCandidates } from "../lib/version-abbreviations.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import { VerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
@@ -91,7 +92,9 @@ chaptersRouter.openapi(versesByRefRoute, async (c): Promise<any> => {
   const ver = await db
     .select({ id: versions.id })
     .from(versions)
-    .where(eq(versions.abbreviation, versionAbbr))
+    .where(
+      inArray(versions.abbreviation, getVersionAbbreviationCandidates(versionAbbr))
+    )
     .limit(1);
 
   if (ver.length === 0) {

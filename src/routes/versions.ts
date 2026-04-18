@@ -1,9 +1,13 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
-import { eq, count, sql, and } from "drizzle-orm";
+import { eq, count, sql, and, inArray, or, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl } from "../middleware/cache.js";
+import {
+  canonicalizeVersionAbbreviation,
+  getVersionAbbreviationCandidates,
+} from "../lib/version-abbreviations.js";
 import {
   VersionSchema,
   BookSchema,
@@ -17,6 +21,13 @@ const SEVEN_DAYS = 604800;
 const THIRTY_DAYS = 2592000;
 
 const versionsRouter = new OpenAPIHono();
+
+function mapVersionForResponse<T extends { abbreviation: string }>(version: T): T {
+  return {
+    ...version,
+    abbreviation: canonicalizeVersionAbbreviation(version.abbreviation),
+  };
+}
 
 // --- Route definitions ---
 
@@ -175,8 +186,15 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
   // add a pg_trgm GIN index on name and abbreviation.
   if (searchFilter) {
     const pattern = `%${searchFilter}%`;
+    const searchCandidates = getVersionAbbreviationCandidates(
+      searchFilter.toUpperCase()
+    );
     conditions.push(
-      sql`(${versions.name} ILIKE ${pattern} OR ${versions.abbreviation} ILIKE ${pattern})`
+      or(
+        ilike(versions.name, pattern),
+        ilike(versions.abbreviation, pattern),
+        inArray(versions.abbreviation, searchCandidates)
+      )!
     );
   }
 
@@ -219,7 +237,7 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
 
   const dbVersionsWithSource = rows
     .map((v: any) => ({
-      ...v,
+      ...mapVersionForResponse(v),
       source: "self-hosted" as const,
       isOfflineCapable: true,
       attributionRequired: v.licenseType !== "PD",
@@ -238,18 +256,31 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
 
 versionsRouter.openapi(getVersionRoute, async (c) => {
   const id = c.req.param("id");
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-  const version = await db
-    .select()
-    .from(versions)
-    .where(eq(versions.id, id))
-    .limit(1);
+  let version = [] as typeof versions.$inferSelect[];
+
+  if (isUuid) {
+    version = await db
+      .select()
+      .from(versions)
+      .where(eq(versions.id, id))
+      .limit(1);
+  }
+
+  if (version.length === 0) {
+    version = await db
+      .select()
+      .from(versions)
+      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
+      .limit(1);
+  }
 
   if (version.length === 0) {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
   }
 
-  return success(c, version[0]);
+  return success(c, mapVersionForResponse(version[0]));
 });
 
 versionsRouter.openapi(versionBooksRoute, async (c) => {
@@ -273,7 +304,7 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
     version = await db
       .select({ id: versions.id })
       .from(versions)
-      .where(eq(versions.abbreviation, id))
+      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
       .limit(1);
   }
 
@@ -294,12 +325,25 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
 
 versionsRouter.openapi(downloadVersionRoute, async (c): Promise<any> => {
   const id = c.req.param("id");
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-  const version = await db
-    .select()
-    .from(versions)
-    .where(eq(versions.id, id))
-    .limit(1);
+  let version = [] as typeof versions.$inferSelect[];
+
+  if (isUuid) {
+    version = await db
+      .select()
+      .from(versions)
+      .where(eq(versions.id, id))
+      .limit(1);
+  }
+
+  if (version.length === 0) {
+    version = await db
+      .select()
+      .from(versions)
+      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
+      .limit(1);
+  }
 
   if (version.length === 0) {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
@@ -310,7 +354,7 @@ versionsRouter.openapi(downloadVersionRoute, async (c): Promise<any> => {
   const allBooks = await db
     .select()
     .from(books)
-    .where(eq(books.versionId, id))
+    .where(eq(books.versionId, ver.id))
     .orderBy(books.position);
 
   const result: Record<string, Record<string, Record<string, string>>> = {};
@@ -344,7 +388,7 @@ versionsRouter.openapi(downloadVersionRoute, async (c): Promise<any> => {
 
   const response: Record<string, unknown> = {
     version: {
-      abbreviation: ver.abbreviation,
+      abbreviation: canonicalizeVersionAbbreviation(ver.abbreviation),
       name: ver.name,
       license: ver.license,
     },

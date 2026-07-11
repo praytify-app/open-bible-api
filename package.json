@@ -1,6 +1,6 @@
 {
   "name": "open-bible-api",
-  "version": "1.0.0",
+  "version": "1.4.0",
   "description": "Open-source REST API serving Bible data",
   "type": "module",
   "main": "dist/index.js",

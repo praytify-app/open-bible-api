@@ -50,4 +50,72 @@ describe("USFM Parser", () => {
       "En el principio Dios creó los cielos y la tierra."
     );
   });
+
+  it("joins poetry continuation lines into the open verse", () => {
+    const poetry = `\\id PSA
+\\h Psalms
+\\c 23
+\\d A Psalm of David.
+\\q1
+\\v 2 He maketh me to lie down in green pastures;
+\\q1 He leadeth me beside still waters.
+\\q1
+\\v 3 He restoreth my soul:
+\\q1 He guideth me in the paths of righteousness.`;
+    const parsed = parseUSFM(poetry);
+    const verses = parsed.chapters[0].verses;
+    expect(verses[0].text).toBe(
+      "He maketh me to lie down in green pastures; He leadeth me beside still waters."
+    );
+    expect(verses[1].text).toBe(
+      "He restoreth my soul: He guideth me in the paths of righteousness."
+    );
+  });
+
+  it("captures verse text that arrives only on a continuation line", () => {
+    const content = `\\id PSA
+\\c 1
+\\q1
+\\v 1
+\\q1 Blessed is the man that walketh not.`;
+    const parsed = parseUSFM(content);
+    expect(parsed.chapters[0].verses[0]).toEqual({
+      number: 1,
+      text: "Blessed is the man that walketh not.",
+    });
+  });
+
+  it("does not attach heading text or post-heading lines to a verse", () => {
+    const content = `\\id PSA
+\\c 3
+\\v 8 Salvation belongeth unto Jehovah.
+\\d A Psalm of David, when he fled.
+\\q1 Stray line belonging to nothing.
+\\v 9 Thy blessing be upon thy people.`;
+    const parsed = parseUSFM(content);
+    const verses = parsed.chapters[0].verses;
+    expect(verses[0].text).toBe("Salvation belongeth unto Jehovah.");
+    expect(verses[1].text).toBe("Thy blessing be upon thy people.");
+  });
+
+  it("strips Strong's word attributes at seed time", () => {
+    const content = `\\id PSA
+\\c 23
+\\q1
+\\v 1 \\w Jehovah|strong="H3068"\\w* \\w is|strong="H3068"\\w* my \\w shepherd|strong="H7462"\\w*.`;
+    const parsed = parseUSFM(content);
+    expect(parsed.chapters[0].verses[0].text).toBe("Jehovah is my shepherd.");
+  });
+
+  it("keeps bridged verse text under the first verse number", () => {
+    const content = `\\id GEN
+\\c 1
+\\p
+\\v 1-2 In the beginning God created the heavens and the earth.`;
+    const parsed = parseUSFM(content);
+    expect(parsed.chapters[0].verses[0]).toEqual({
+      number: 1,
+      text: "In the beginning God created the heavens and the earth.",
+    });
+  });
 });

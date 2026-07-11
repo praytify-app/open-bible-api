@@ -18,9 +18,10 @@ vi.mock("../../src/db/client.js", () => {
   };
   mockDb.select.mockReturnValue(selectChain);
 
-  // Chainable insert mock
+  // Chainable insert mock (language upsert: values → onConflictDoNothing → returning)
   const insertChain = {
     values: vi.fn().mockReturnThis(),
+    onConflictDoNothing: vi.fn().mockReturnThis(),
     returning: vi.fn().mockResolvedValue([{ id: "mock-id" }]),
   };
   mockDb.insert.mockReturnValue(insertChain);
@@ -75,23 +76,15 @@ describe("seedVersion idempotency", () => {
   });
 
   it("should skip (not throw) when version already exists", async () => {
-    // First select (language lookup) returns an existing language
+    // Language arrives via the atomic upsert (db.insert); the select
+    // afterwards is the version-exists lookup, returning an existing row
     const selectChain = {
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
-      limit: vi.fn(),
+      limit: vi
+        .fn()
+        .mockResolvedValue([{ id: "version-id", abbreviation: "TST" }]),
     };
-
-    let selectCallCount = 0;
-    selectChain.limit.mockImplementation(() => {
-      selectCallCount++;
-      if (selectCallCount === 1) {
-        // Language lookup — return existing language
-        return Promise.resolve([{ id: "lang-id" }]);
-      }
-      // Version lookup — return existing version (already exists)
-      return Promise.resolve([{ id: "version-id", abbreviation: "TST" }]);
-    });
 
     (db.select as ReturnType<typeof vi.fn>).mockReturnValue(selectChain);
 
@@ -105,8 +98,9 @@ describe("seedVersion idempotency", () => {
       'Version "TST" already exists, skipping.'
     );
 
-    // Should NOT have called insert for the version
-    expect(db.insert).not.toHaveBeenCalled();
+    // Only the language upsert insert ran; no version transaction started
+    expect(db.insert).toHaveBeenCalledTimes(1);
+    expect(db.transaction).not.toHaveBeenCalled();
 
     consoleSpy.mockRestore();
   });
@@ -118,15 +112,8 @@ describe("seedVersion idempotency", () => {
       limit: vi.fn(),
     };
 
-    let selectCallCount = 0;
-    selectChain.limit.mockImplementation(() => {
-      selectCallCount++;
-      if (selectCallCount === 1) {
-        return Promise.resolve([{ id: "lang-id" }]);
-      }
-      // Version does NOT exist
-      return Promise.resolve([]);
-    });
+    // Version-exists lookup — version does NOT exist
+    selectChain.limit.mockResolvedValue([]);
 
     (db.select as ReturnType<typeof vi.fn>).mockReturnValue(selectChain);
 

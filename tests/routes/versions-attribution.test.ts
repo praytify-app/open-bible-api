@@ -42,6 +42,7 @@ vi.mock("../../src/db/client.js", () => {
     const chain: any = {};
     chain.select = vi.fn().mockReturnValue(chain);
     chain.from = vi.fn().mockReturnValue(chain);
+    chain.leftJoin = vi.fn().mockReturnValue(chain);
     chain.where = vi.fn().mockReturnValue(chain);
     chain.orderBy = vi.fn().mockReturnValue(chain);
     chain.limit = vi.fn().mockReturnValue(chain);

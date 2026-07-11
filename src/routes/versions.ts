@@ -153,7 +153,10 @@ const downloadVersionRoute = createRoute({
 // --- Handlers ---
 
 versionsRouter.openapi(listVersionsRoute, async (c) => {
-  const { page, limit, offset } = parsePagination(c);
+  // Versions are lightweight catalog metadata (~1,300 rows total); allow
+  // clients like the portal's translation browser and the reader's version
+  // picker to fetch the full catalog in one request.
+  const { page, limit, offset } = parsePagination(c, 2000);
   const languageFilter = c.req.query("language");
   const searchFilter = c.req.query("search");
   const hasAudioFilter = c.req.query("hasAudio");
@@ -221,8 +224,13 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
         licenseType: versions.licenseType,
         hasAudio: versions.hasAudio,
         createdAt: versions.createdAt,
+        language: languages.name,
+        languageCode: languages.code,
+        languageNativeName: languages.nativeName,
+        textDirection: languages.direction,
       })
       .from(versions)
+      .leftJoin(languages, eq(versions.languageId, languages.id))
       .where(whereClause)
       .orderBy(versions.name)
       .limit(limit)
@@ -243,14 +251,11 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
       attributionRequired: v.licenseType !== "PD",
     }));
 
-  const allVersions = dbVersionsWithSource;
-  const total = dbVersionsWithSource.length;
-
-  return success(c, allVersions, {
+  return success(c, dbVersionsWithSource, {
     page,
     limit,
-    total,
-    totalPages: Math.ceil(total / limit),
+    total: dbTotal,
+    totalPages: Math.ceil(dbTotal / limit),
   });
 });
 
@@ -280,7 +285,24 @@ versionsRouter.openapi(getVersionRoute, async (c) => {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
   }
 
-  return success(c, mapVersionForResponse(version[0]));
+  const [lang] = await db
+    .select({
+      name: languages.name,
+      code: languages.code,
+      nativeName: languages.nativeName,
+      direction: languages.direction,
+    })
+    .from(languages)
+    .where(eq(languages.id, version[0].languageId))
+    .limit(1);
+
+  return success(c, {
+    ...mapVersionForResponse(version[0]),
+    language: lang?.name ?? null,
+    languageCode: lang?.code ?? null,
+    languageNativeName: lang?.nativeName ?? null,
+    textDirection: lang?.direction ?? null,
+  });
 });
 
 versionsRouter.openapi(versionBooksRoute, async (c) => {

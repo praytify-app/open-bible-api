@@ -28,6 +28,10 @@ export const VersionSchema = z.object({
   licenseType: z.string().openapi({ description: "License type code", example: "PD" }),
   hasAudio: z.boolean().openapi({ description: "Whether audio is available" }),
   createdAt: z.string().datetime().openapi({ description: "ISO 8601 creation timestamp" }),
+  language: z.string().nullable().optional().openapi({ description: "Language name in English", example: "English" }),
+  languageCode: z.string().nullable().optional().openapi({ description: "ISO 639-3 language code", example: "eng" }),
+  languageNativeName: z.string().nullable().optional().openapi({ description: "Language name in its own script" }),
+  textDirection: z.string().nullable().optional().openapi({ description: "Text direction: ltr or rtl", example: "ltr" }),
 });
 
 export const BookSchema = z.object({

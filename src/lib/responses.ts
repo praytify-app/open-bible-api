@@ -31,7 +31,7 @@ export function errorResponse<S extends 400 | 401 | 403 | 404 | 409 | 422 | 429 
   );
 }
 
-export function parsePagination(c: Context) {
+export function parsePagination(c: Context, maxLimit = 100) {
   const pageParam = c.req.query("page");
   const limitParam = c.req.query("limit");
 
@@ -40,7 +40,7 @@ export function parsePagination(c: Context) {
 
   if (isNaN(page) || page < 1) page = 1;
   if (isNaN(limit) || limit < 1) limit = 20;
-  if (limit > 100) limit = 100;
+  if (limit > maxLimit) limit = maxLimit;
 
   const offset = (page - 1) * limit;
 

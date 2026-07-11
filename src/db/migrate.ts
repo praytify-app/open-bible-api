@@ -23,17 +23,11 @@ async function main() {
   // Create pg_trgm extension for fuzzy text search
   await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
 
-  // Add search_vector column to verses if it doesn't exist
+  // Plain (not generated) search_vector column: vectors use the language-
+  // appropriate dictionary per version, which a generated expression cannot
+  // do. Population happens in scripts/build-search-infra.ts after seeding.
   await db.execute(sql`
-    DO $$ BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'verses' AND column_name = 'search_vector'
-      ) THEN
-        ALTER TABLE verses ADD COLUMN search_vector tsvector
-          GENERATED ALWAYS AS (to_tsvector('english', text)) STORED;
-      END IF;
-    END $$
+    ALTER TABLE verses ADD COLUMN IF NOT EXISTS search_vector tsvector
   `);
 
   // Create GIN indexes for full-text search

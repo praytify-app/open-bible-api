@@ -139,13 +139,13 @@ searchRouter.openapi(searchRoute, async (c): Promise<any> => {
         ver.abbreviation AS version_abbreviation,
         ver.license,
         CASE WHEN ver.license LIKE '%CC%' THEN ver.name || ' (' || COALESCE(ver.source_url, '') || ')' ELSE NULL END AS attribution,
-        ts_rank(to_tsvector(${dictName}::regconfig, v.text), plainto_tsquery(${dictName}::regconfig, ${q})) AS rank
+        ts_rank(v.search_vector, plainto_tsquery(${dictName}::regconfig, ${q})) AS rank
       FROM verses v
       JOIN chapters c ON v.chapter_id = c.id
       JOIN books b ON c.book_id = b.id
       JOIN versions ver ON b.version_id = ver.id
       WHERE b.version_id = ANY(${pgArray}::uuid[])
-        AND to_tsvector(${dictName}::regconfig, v.text) @@ plainto_tsquery(${dictName}::regconfig, ${q})
+        AND v.search_vector @@ plainto_tsquery(${dictName}::regconfig, ${q})
       ORDER BY rank DESC
       LIMIT ${limit}
       OFFSET ${offset}

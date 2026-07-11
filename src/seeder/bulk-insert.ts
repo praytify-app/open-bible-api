@@ -69,29 +69,32 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
     force = false,
   } = options;
 
-  // 1. Upsert language (intentionally outside transaction — idempotent, shared across versions)
-  const existingLangs = await db
-    .select()
-    .from(languages)
-    .where(eq(languages.code, languageCode))
-    .limit(1);
+  // 1. Upsert language (intentionally outside transaction — idempotent, shared
+  // across versions). ON CONFLICT keeps this atomic: same-language translations
+  // are adjacent in the eBible catalog, so concurrent imports race here.
+  const [insertedLang] = await db
+    .insert(languages)
+    .values({
+      code: languageCode,
+      name: languageName,
+      nativeName: languageNativeName ?? null,
+      script: languageScript ?? null,
+      direction: languageDirection,
+    })
+    .onConflictDoNothing({ target: languages.code })
+    .returning({ id: languages.id });
 
   let languageId: string;
 
-  if (existingLangs.length > 0) {
-    languageId = existingLangs[0].id;
+  if (insertedLang) {
+    languageId = insertedLang.id;
   } else {
-    const [inserted] = await db
-      .insert(languages)
-      .values({
-        code: languageCode,
-        name: languageName,
-        nativeName: languageNativeName ?? null,
-        script: languageScript ?? null,
-        direction: languageDirection,
-      })
-      .returning({ id: languages.id });
-    languageId = inserted.id;
+    const [existingLang] = await db
+      .select({ id: languages.id })
+      .from(languages)
+      .where(eq(languages.code, languageCode))
+      .limit(1);
+    languageId = existingLang.id;
   }
 
   // 2. Check version doesn't already exist (unless force mode)

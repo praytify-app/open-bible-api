@@ -83,18 +83,32 @@ export function parseUSFM(content: string): ParsedBook {
       // A line may contain multiple \v markers (rare but possible)
       const verseSegments = trimmed.split(/(?=\\v\s+\d+)/);
       for (const segment of verseSegments) {
-        // Bridged verses like "\v 1-2 text" keep the text under the first number
-        const vMatch = segment.match(/^\\v\s+(\d+)(?:[-–]\d+[ab]?)?\s*(.*)$/);
+        // Sub-verses ("\v 4a", "\v 4b-5") and bridges ("\v 1-2") all file
+        // their text under the base number — the schema is one row per
+        // (chapter, number), so segments of a split verse must merge, never
+        // duplicate.
+        const vMatch = segment.match(
+          /^\\v\s+(\d+)[a-d]?(?:[-–]\d+[a-d]?)?(?:\s+(.*))?$/
+        );
         if (vMatch) {
-          const verse: ParsedVerse = {
-            number: parseInt(vMatch[1], 10),
-            text: stripMarkers(vMatch[2]),
-          };
-          // Push even when the \v line itself is empty: the text often
-          // arrives on the next \q/\p continuation line. Empty verses are
-          // dropped at the end.
-          currentChapter.verses.push(verse);
-          currentVerse = verse;
+          const number = parseInt(vMatch[1], 10);
+          const text = stripMarkers(vMatch[2] ?? "");
+          const existing = currentChapter.verses.find(
+            (v) => v.number === number
+          );
+          if (existing) {
+            if (text) {
+              existing.text = existing.text ? `${existing.text} ${text}` : text;
+            }
+            currentVerse = existing;
+          } else {
+            // Push even when the \v line itself is empty: the text often
+            // arrives on the next \q/\p continuation line. Empty verses are
+            // dropped at the end.
+            const verse: ParsedVerse = { number, text };
+            currentChapter.verses.push(verse);
+            currentVerse = verse;
+          }
         }
       }
       continue;

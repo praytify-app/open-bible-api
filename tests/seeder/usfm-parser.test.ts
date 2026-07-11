@@ -118,4 +118,38 @@ describe("USFM Parser", () => {
       text: "In the beginning God created the heavens and the earth.",
     });
   });
+
+  it("merges split sub-verses into one row per verse number", () => {
+    const content = `\\id GEN
+\\c 2
+\\p
+\\v 4a First part of the verse.
+\\v 4b-5 Second part bridging onward.
+\\v 6 A normal verse.`;
+    const parsed = parseUSFM(content);
+    const verses = parsed.chapters[0].verses;
+    expect(verses).toHaveLength(2);
+    expect(verses[0]).toEqual({
+      number: 4,
+      text: "First part of the verse. Second part bridging onward.",
+    });
+    expect(verses[1]).toEqual({ number: 6, text: "A normal verse." });
+  });
+
+  it("merges repeated verse numbers instead of duplicating rows", () => {
+    const content = `\\id PSA
+\\c 1
+\\q1
+\\v 1 First stanza line.
+\\q1 Continuation of first.
+\\v 1 Repeated marker text.
+\\v 2 Second verse.`;
+    const parsed = parseUSFM(content);
+    const verses = parsed.chapters[0].verses;
+    expect(verses).toHaveLength(2);
+    expect(verses[0].number).toBe(1);
+    expect(verses[0].text).toBe(
+      "First stanza line. Continuation of first. Repeated marker text."
+    );
+  });
 });

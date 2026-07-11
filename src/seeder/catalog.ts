@@ -192,6 +192,8 @@ export function parseCatalogCsv(csv: string): CatalogEntry[] {
  */
 const KNOWN_ABBREVIATIONS: Record<string, string> = {
   engkjv: "KJV",
+  // eng-web strips to "WEB" and would shadow the canonical engwebp
+  "eng-web": "WEBCL",
   "eng-asv": "ASV",
   engkjvcpb: "KJVA",
   engbsb: "BSB",

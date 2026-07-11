@@ -25,6 +25,8 @@ export interface SeedVersionOptions {
   languageDirection?: string;
   /** Version abbreviation (e.g. "KJV") */
   abbreviation: string;
+  /** Unique fallback used when another translation holds the abbreviation */
+  fallbackAbbreviation?: string;
   /** Full version name */
   name: string;
   /** License information */
@@ -58,7 +60,8 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
     languageNativeName,
     languageScript,
     languageDirection = "ltr",
-    abbreviation,
+    abbreviation: requestedAbbreviation,
+    fallbackAbbreviation,
     name,
     license,
     sourceUrl,
@@ -97,7 +100,12 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
     languageId = existingLang.id;
   }
 
-  // 2. Check version doesn't already exist (unless force mode)
+  // 2. Check version existence. The same translation (matched by sourceUrl)
+  // skips or force-replaces; a DIFFERENT translation holding the same
+  // abbreviation is a collision — derived abbreviations like "NT" repeat
+  // across hundreds of languages — and retries once under the deterministic
+  // fallback (uppercased eBible translationId, unique by construction).
+  let abbreviation = requestedAbbreviation;
   const existingVersions = await db
     .select()
     .from(versions)
@@ -105,13 +113,40 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
     .limit(1);
 
   if (existingVersions.length > 0) {
-    if (!force) {
+    const sameTranslation =
+      (existingVersions[0].sourceUrl ?? null) === (sourceUrl ?? null);
+
+    if (sameTranslation) {
+      if (!force) {
+        console.log(`Version "${abbreviation}" already exists, skipping.`);
+        return;
+      }
+      // Force mode: delete existing version (cascades to books/chapters/verses)
+      console.log(`Force mode: deleting existing "${abbreviation}" before re-import...`);
+      await db.delete(versions).where(eq(versions.id, existingVersions[0].id));
+    } else if (fallbackAbbreviation && fallbackAbbreviation !== abbreviation) {
+      const fallbackExisting = await db
+        .select()
+        .from(versions)
+        .where(eq(versions.abbreviation, fallbackAbbreviation))
+        .limit(1);
+      if (fallbackExisting.length > 0) {
+        if ((fallbackExisting[0].sourceUrl ?? null) === (sourceUrl ?? null)) {
+          console.log(`Version "${fallbackAbbreviation}" already exists, skipping.`);
+          return;
+        }
+        throw new Error(
+          `Abbreviation collision: both "${abbreviation}" and fallback "${fallbackAbbreviation}" are taken by other translations`
+        );
+      }
+      console.log(
+        `Abbreviation "${abbreviation}" is taken by another translation; using "${fallbackAbbreviation}".`
+      );
+      abbreviation = fallbackAbbreviation;
+    } else {
       console.log(`Version "${abbreviation}" already exists, skipping.`);
       return;
     }
-    // Force mode: delete existing version (cascades to books/chapters/verses)
-    console.log(`Force mode: deleting existing "${abbreviation}" before re-import...`);
-    await db.delete(versions).where(eq(versions.id, existingVersions[0].id));
   }
 
   // 3. Insert version + all books/chapters/verses inside a transaction

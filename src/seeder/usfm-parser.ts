@@ -69,11 +69,19 @@ export function parseUSFM(content: string): ParsedBook {
       continue;
     }
 
-    // \c marker — new chapter
+    // \c marker — new chapter. A repeated chapter number (seen in some
+    // Septuagint-derived files) continues the existing chapter instead of
+    // duplicating it, which would violate the (book, number) unique index.
     const cMatch = trimmed.match(/^\\c\s+(\d+)/);
     if (cMatch) {
-      currentChapter = { number: parseInt(cMatch[1], 10), verses: [] };
-      chapters.push(currentChapter);
+      const chapterNumber = parseInt(cMatch[1], 10);
+      const existingChapter = chapters.find((ch) => ch.number === chapterNumber);
+      if (existingChapter) {
+        currentChapter = existingChapter;
+      } else {
+        currentChapter = { number: chapterNumber, verses: [] };
+        chapters.push(currentChapter);
+      }
       currentVerse = null;
       continue;
     }

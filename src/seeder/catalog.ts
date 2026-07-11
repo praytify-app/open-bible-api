@@ -243,26 +243,47 @@ const KNOWN_ABBREVIATIONS: Record<string, string> = {
  * 2. Strip the language prefix (first 3 chars) and uppercase the remainder
  * 3. Fall back to translationId uppercased if too short
  */
+/**
+ * Scope markers shared by hundreds of unrelated translations ("acuNT" and
+ * "akeNT" both strip to "NT"). Never distinctive enough to name one version.
+ */
+const GENERIC_SUFFIXES = new Set([
+  "NT", "OT", "PS", "POR", "P", "PP", "NTP", "NTPS", "NTPO", "NTPSA",
+]);
+
 function deriveAbbreviation(translationId: string, shortTitle: string): string {
   // Check known overrides
   if (KNOWN_ABBREVIATIONS[translationId]) {
     return KNOWN_ABBREVIATIONS[translationId];
   }
 
-  // If shortTitle is already short (≤ 10 chars, no spaces), use it
+  // If shortTitle is already short (≤ 10 chars, no spaces) and distinctive, use it
   if (shortTitle && shortTitle.length <= 10 && !shortTitle.includes(" ")) {
-    return shortTitle.toUpperCase();
+    const upper = shortTitle.toUpperCase();
+    if (!GENERIC_SUFFIXES.has(upper)) {
+      return upper;
+    }
   }
 
   // Strip language prefix (e.g. "engkjv" → "kjv", "spaRVG" → "RVG")
-  // eBible translationIds typically start with a 3-letter ISO code
+  // eBible translationIds typically start with a 3-letter ISO code.
+  // Generic or all-numeric suffixes ("NT", "2017") are rejected — they
+  // repeat across languages and collide on the unique abbreviation index.
   if (translationId.length > 3) {
     const suffix = translationId.slice(3);
-    // Clean up: remove underscores, uppercase
     const cleaned = suffix.replace(/[_-]/g, "").toUpperCase();
-    if (cleaned.length >= 2) {
+    if (
+      cleaned.length >= 2 &&
+      !GENERIC_SUFFIXES.has(cleaned) &&
+      !/^\d+$/.test(cleaned)
+    ) {
       return cleaned;
     }
+  }
+
+  // Language-qualified short title ("Waima NT") is distinctive per language
+  if (shortTitle) {
+    return shortTitle;
   }
 
   // Last resort: uppercase the full translationId

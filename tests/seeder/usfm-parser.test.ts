@@ -136,6 +136,23 @@ describe("USFM Parser", () => {
     expect(verses[1]).toEqual({ number: 6, text: "A normal verse." });
   });
 
+  it("merges repeated chapter markers instead of duplicating chapters", () => {
+    const content = `\\id EZR
+\\c 1
+\\p
+\\v 1 First verse of chapter one.
+\\c 1
+\\p
+\\v 2 Second verse arriving after a repeated marker.
+\\c 2
+\\p
+\\v 1 Chapter two begins.`;
+    const parsed = parseUSFM(content);
+    expect(parsed.chapters).toHaveLength(2);
+    expect(parsed.chapters[0].verses.map((v) => v.number)).toEqual([1, 2]);
+    expect(parsed.chapters[1].verses).toHaveLength(1);
+  });
+
   it("merges repeated verse numbers instead of duplicating rows", () => {
     const content = `\\id PSA
 \\c 1

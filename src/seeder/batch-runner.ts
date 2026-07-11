@@ -7,7 +7,7 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { versions } from "../db/schema.js";
 import { downloadAndParseEbible } from "./sources/ebible.js";
@@ -80,16 +80,29 @@ export async function importSingleTranslation(
   entry: CatalogEntry,
   force = false
 ): Promise<BatchResult> {
+  // Unique by construction: eBible translationIds never repeat, so this
+  // resolves abbreviation collisions (e.g. hundreds of "NT" suffixes)
+  const fallbackAbbreviation = entry.translationId
+    .replace(/[_-]/g, "")
+    .toUpperCase();
+
   try {
-    // Check if already imported
+    // Check if THIS translation is already imported (matched by sourceUrl,
+    // under either its primary or fallback abbreviation). A different
+    // translation holding the abbreviation is not a skip — seedVersion
+    // imports it under the fallback.
     if (!force) {
       const existing = await db
-        .select({ id: versions.id })
+        .select({ id: versions.id, sourceUrl: versions.sourceUrl })
         .from(versions)
-        .where(eq(versions.abbreviation, entry.abbreviation))
-        .limit(1);
+        .where(
+          inArray(versions.abbreviation, [
+            entry.abbreviation,
+            fallbackAbbreviation,
+          ])
+        );
 
-      if (existing.length > 0) {
+      if (existing.some((v) => v.sourceUrl === entry.sourceUrl)) {
         return {
           translationId: entry.translationId,
           status: "skipped",
@@ -118,6 +131,7 @@ export async function importSingleTranslation(
       languageScript: entry.languageScript,
       languageDirection: entry.languageDirection,
       abbreviation: entry.abbreviation,
+      fallbackAbbreviation,
       name: entry.name,
       license: entry.license,
       sourceUrl: entry.sourceUrl,

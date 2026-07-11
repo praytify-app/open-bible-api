@@ -150,82 +150,128 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
   }
 
   // 3. Insert version + all books/chapters/verses inside a transaction
-  let totalVerseCount = 0;
+  const insertVersionTree = async (abbr: string): Promise<number> =>
+    db.transaction(async (tx) => {
+      let treeVerseCount = 0;
 
-  await db.transaction(async (tx) => {
-    const [version] = await tx
-      .insert(versions)
-      .values({
-        languageId,
-        abbreviation,
-        name,
-        license: license ?? null,
-        sourceUrl: sourceUrl ?? null,
-        attribution: attribution ?? null,
-        attributionUrl: attributionUrl ?? null,
-        licenseType: licenseType ?? "PD",
-        hasAudio: hasAudio ?? false,
-        verseCount: 0,
-      })
-      .returning({ id: versions.id });
-
-    const versionId = version.id;
-
-    for (const parsedBook of parsedBooks) {
-      const meta = getBookMeta(parsedBook.bookCode);
-      if (!meta) {
-        console.warn(`Skipping unknown book code: ${parsedBook.bookCode}`);
-        continue;
-      }
-
-      const [book] = await tx
-        .insert(books)
+      const [version] = await tx
+        .insert(versions)
         .values({
-          versionId,
-          bookCode: meta.code,
-          name: parsedBook.bookName || meta.englishName,
-          position: meta.position,
-          chapterCount: parsedBook.chapters.length,
-          testament: meta.testament,
+          languageId,
+          abbreviation: abbr,
+          name,
+          license: license ?? null,
+          sourceUrl: sourceUrl ?? null,
+          attribution: attribution ?? null,
+          attributionUrl: attributionUrl ?? null,
+          licenseType: licenseType ?? "PD",
+          hasAudio: hasAudio ?? false,
+          verseCount: 0,
         })
-        .returning({ id: books.id });
+        .returning({ id: versions.id });
 
-      for (const parsedChapter of parsedBook.chapters) {
-        const [chapter] = await tx
-          .insert(chapters)
+      const versionId = version.id;
+
+      for (const parsedBook of parsedBooks) {
+        const meta = getBookMeta(parsedBook.bookCode);
+        if (!meta) {
+          console.warn(`Skipping unknown book code: ${parsedBook.bookCode}`);
+          continue;
+        }
+
+        const [book] = await tx
+          .insert(books)
           .values({
-            bookId: book.id,
-            number: parsedChapter.number,
-            verseCount: parsedChapter.verses.length,
+            versionId,
+            bookCode: meta.code,
+            name: parsedBook.bookName || meta.englishName,
+            position: meta.position,
+            chapterCount: parsedBook.chapters.length,
+            testament: meta.testament,
           })
-          .returning({ id: chapters.id });
+          .returning({ id: books.id });
 
-        // Chunk verse inserts at 500 rows to avoid query size limits
-        if (parsedChapter.verses.length > 0) {
-          const verseRows = parsedChapter.verses.map((v) => ({
-            chapterId: chapter.id,
-            number: v.number,
-            text: v.text,
-          }));
+        for (const parsedChapter of parsedBook.chapters) {
+          const [chapter] = await tx
+            .insert(chapters)
+            .values({
+              bookId: book.id,
+              number: parsedChapter.number,
+              verseCount: parsedChapter.verses.length,
+            })
+            .returning({ id: chapters.id });
 
-          for (let i = 0; i < verseRows.length; i += 500) {
-            const chunk = verseRows.slice(i, i + 500);
-            await tx.insert(verses).values(chunk);
+          // Chunk verse inserts at 500 rows to avoid query size limits
+          if (parsedChapter.verses.length > 0) {
+            const verseRows = parsedChapter.verses.map((v) => ({
+              chapterId: chapter.id,
+              number: v.number,
+              text: v.text,
+            }));
+
+            for (let i = 0; i < verseRows.length; i += 500) {
+              const chunk = verseRows.slice(i, i + 500);
+              await tx.insert(verses).values(chunk);
+            }
+
+            treeVerseCount += parsedChapter.verses.length;
           }
-
-          totalVerseCount += parsedChapter.verses.length;
         }
       }
-    }
 
-    // Update verse count on version
-    await tx
-      .update(versions)
-      .set({ verseCount: totalVerseCount })
-      .where(eq(versions.id, versionId));
-  });
+      // Update verse count on version
+      await tx
+        .update(versions)
+        .set({ verseCount: treeVerseCount })
+        .where(eq(versions.id, versionId));
+
+      return treeVerseCount;
+    });
+
+  let totalVerseCount: number;
+  try {
+    totalVerseCount = await insertVersionTree(abbreviation);
+  } catch (err) {
+    // Concurrent imports can both pass the existence check and race to the
+    // same abbreviation (engweb vs engwebp both claiming WEB). The loser's
+    // transaction rolled back cleanly; retry once under the fallback.
+    if (
+      isAbbreviationUniqueViolation(err) &&
+      fallbackAbbreviation &&
+      fallbackAbbreviation !== abbreviation
+    ) {
+      console.log(
+        `Abbreviation "${abbreviation}" was claimed concurrently; retrying as "${fallbackAbbreviation}".`
+      );
+      abbreviation = fallbackAbbreviation;
+      totalVerseCount = await insertVersionTree(abbreviation);
+    } else {
+      throw err;
+    }
+  }
 
   console.log(
     `Seeded ${abbreviation}: ${parsedBooks.length} books, ${totalVerseCount} verses`
   );
+}
+
+/** Detect a Postgres unique violation (23505) on the versions abbreviation. */
+function isAbbreviationUniqueViolation(err: unknown): boolean {
+  let current: any = err;
+  for (let depth = 0; current && depth < 4; depth++) {
+    if (
+      current.code === "23505" &&
+      String(current.constraint_name ?? current.constraint ?? "").includes("abbreviation")
+    ) {
+      return true;
+    }
+    if (
+      typeof current.message === "string" &&
+      current.message.includes("versions_abbreviation_unique")
+    ) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
 }

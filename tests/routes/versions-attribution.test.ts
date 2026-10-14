@@ -118,14 +118,14 @@ describe("Versions API — attribution fields", () => {
     }
   });
 
-  it("GET /api/v1/versions includes both self-hosted and api-bible sources", async () => {
+  it("GET /api/v1/versions serves only self-hosted versions", async () => {
     const res = await app.request("/api/v1/versions");
     const body = await res.json();
     const data = body.data;
 
+    // The api.bible proxy was removed (fba2e84); every version now comes
+    // from the local corpus.
     const sources = new Set(data.map((v: any) => v.source));
-    // At minimum we should have api-bible (always present) and self-hosted (from mock)
-    expect(sources.has("api-bible")).toBe(true);
-    expect(sources.has("self-hosted")).toBe(true);
+    expect([...sources]).toEqual(["self-hosted"]);
   });
 });

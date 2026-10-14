@@ -26,6 +26,7 @@ describe("LanguageSchema", () => {
     script: "Latin",
     direction: "ltr" as const,
     createdAt: "2026-01-01T00:00:00.000Z",
+    versionCount: 3,
   };
 
   it("accepts a valid language", () => {
@@ -206,6 +207,7 @@ describe("successSchema", () => {
         script: null,
         direction: "ltr",
         createdAt: "2026-01-01T00:00:00.000Z",
+        versionCount: 3,
       },
     });
     expect(result.success).toBe(true);

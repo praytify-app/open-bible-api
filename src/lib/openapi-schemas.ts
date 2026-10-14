@@ -129,6 +129,54 @@ export const SearchResultSchema = z
   })
   .openapi("SearchResult");
 
+export const DownloadVersionMetaSchema = z
+  .object({
+    id: z.string().uuid(),
+    abbreviation: z.string().openapi({ example: "WEB" }),
+    name: z.string().openapi({ example: "World English Bible" }),
+    licenseType: z.string().openapi({ example: "PD" }),
+    ...versionLicensingFields,
+  })
+  .openapi("DownloadVersionMeta");
+
+export const DownloadBookSchema = z
+  .object({
+    bookCode: z.string().openapi({ description: "USFM book code", example: "GEN" }),
+    code: z.string().openapi({ deprecated: true, description: "Alias of bookCode for existing offline clients" }),
+    name: z.string().openapi({ description: "Book name in this version", example: "Genesis" }),
+    position: z.number().int(),
+    testament: z.string().openapi({ example: "OT" }),
+    chapters: z.array(
+      z.object({
+        number: z.number().int(),
+        verses: z.array(z.object({ number: z.number().int(), text: z.string() })),
+      })
+    ),
+  })
+  .openapi("DownloadBook");
+
+export const DownloadBooksSchema = z
+  .object({
+    version: DownloadVersionMetaSchema,
+    name: z.string().openapi({ deprecated: true, description: "Alias of version.name for existing offline clients" }),
+    languageCode: z
+      .string()
+      .nullable()
+      .openapi({ deprecated: true, description: "Alias of version.languageCode for existing offline clients" }),
+    books: z.array(DownloadBookSchema),
+  })
+  .openapi("DownloadBooks");
+
+export const DownloadLegacySchema = z
+  .object({
+    version: z.object({ abbreviation: z.string(), name: z.string(), license: z.string().nullable() }),
+    books: z
+      .record(z.string(), z.record(z.string(), z.record(z.string(), z.string())))
+      .openapi({ description: "bookCode -> chapter -> verse -> text" }),
+    attribution: z.string().optional(),
+  })
+  .openapi("DownloadLegacy");
+
 // --- Query Parameter Schemas ---
 
 export const PaginationQuerySchema = z.object({

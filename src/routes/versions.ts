@@ -1,20 +1,26 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
-import { eq, count, sql, and, inArray, or, ilike } from "drizzle-orm";
+import { eq, count, sql, and, asc, inArray, or, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import {
   canonicalizeVersionAbbreviation,
   getVersionAbbreviationCandidates,
 } from "../lib/version-abbreviations.js";
+import { cleanVerseText } from "../lib/text-cleaner.js";
+import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
 import {
   VersionSchema,
   BookSchema,
   PaginationQuerySchema,
   ErrorSchema,
   PaginationMetaSchema,
+  DownloadBooksSchema,
+  DownloadLegacySchema,
 } from "../lib/openapi-schemas.js";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const versionsRouter = new OpenAPIHono();
 versionsRouter.use("*", cacheControl(CachePolicy.scripture));
@@ -110,35 +116,39 @@ const versionBooksRoute = createRoute({
   },
 });
 
+export const DOWNLOAD_FORMATS = ["books", "legacy"] as const;
+type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number];
+
 const downloadVersionRoute = createRoute({
   method: "get",
   path: "/{id}/download",
   tags: ["Versions"],
-  summary: "Download full Bible as JSON",
-  description: "Returns the entire Bible text for a version as a structured JSON object.",
+  summary: "Download a full Bible as JSON",
+  description:
+    "The entire text of one version in a single response. `format=books` (default) returns an ordered array of " +
+    "books, each with its chapters and verses, plus the version's license and attribution. `format=legacy` " +
+    "returns the earlier nested-object shape and is deprecated.",
   request: {
     params: z.object({
-      id: z.string().openapi({ description: "Version UUID" }),
+      id: z.string().openapi({ description: "Version UUID or abbreviation", example: "WEB" }),
+    }),
+    query: z.object({
+      // Validated in the handler so a bad value gets the standard error envelope.
+      format: z.string().optional().openapi({ description: "Response shape: books (default) or legacy (deprecated)", example: "books" }),
     }),
   },
   responses: {
     200: {
-      description: "Full Bible data",
+      description: "Full Bible text",
       content: {
         "application/json": {
-          schema: z.object({
-            data: z.object({
-              version: z.object({
-                abbreviation: z.string(),
-                name: z.string(),
-                license: z.string().nullable(),
-              }),
-              books: z.record(z.string(), z.record(z.string(), z.record(z.string(), z.string()))),
-              attribution: z.string().optional(),
-            }),
-          }),
+          schema: z.object({ data: z.union([DownloadBooksSchema, DownloadLegacySchema]) }),
         },
       },
+    },
+    400: {
+      description: "Unknown format",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
       description: "Version not found",
@@ -342,84 +352,135 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
   return success(c, bookRows);
 });
 
-versionsRouter.openapi(downloadVersionRoute, async (c): Promise<any> => {
+versionsRouter.openapi(downloadVersionRoute, async (c) => {
   const id = c.req.param("id");
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const formatParam = c.req.query("format") ?? "books";
 
-  let version = [] as typeof versions.$inferSelect[];
-
-  if (isUuid) {
-    version = await db
-      .select()
-      .from(versions)
-      .where(eq(versions.id, id))
-      .limit(1);
+  if (!DOWNLOAD_FORMATS.includes(formatParam as DownloadFormat)) {
+    return errorResponse(c, 400, "BAD_REQUEST", `Unknown format '${formatParam}'. Use one of: ${DOWNLOAD_FORMATS.join(", ")}`);
   }
+  const format = formatParam as DownloadFormat;
 
-  if (version.length === 0) {
-    version = await db
-      .select()
-      .from(versions)
-      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
-      .limit(1);
-  }
+  // Query 1: the version by UUID or abbreviation, with its language.
+  const isUuid = UUID.test(id);
+  const candidates = getVersionAbbreviationCandidates(id);
+  const found = await db
+    .select({ ...versionMetaColumns, sourceUrl: versions.sourceUrl })
+    .from(versions)
+    .leftJoin(languages, eq(versions.languageId, languages.id))
+    .where(
+      isUuid
+        ? or(eq(versions.id, id), inArray(versions.abbreviation, candidates))
+        : inArray(versions.abbreviation, candidates)
+    );
 
-  if (version.length === 0) {
+  const row =
+    found.find((r) => r.id === id) ??
+    candidates.map((abbr) => found.find((r) => r.abbreviation === abbr)).find(Boolean);
+
+  if (!row) {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
   }
 
-  const ver = version[0];
-
-  const allBooks = await db
-    .select()
+  // Query 2: every verse in canonical order. This replaces one query per
+  // book and one per chapter (about 1,256 round trips for a full Bible)
+  // that held a pool connection for the whole download.
+  const verseRows = await db
+    .select({
+      bookCode: books.bookCode,
+      bookName: books.name,
+      position: books.position,
+      testament: books.testament,
+      chapter: chapters.number,
+      verse: verses.number,
+      text: verses.text,
+    })
     .from(books)
-    .where(eq(books.versionId, ver.id))
-    .orderBy(books.position);
+    .innerJoin(chapters, eq(chapters.bookId, books.id))
+    .innerJoin(verses, eq(verses.chapterId, chapters.id))
+    .where(eq(books.versionId, row.id))
+    .orderBy(asc(books.position), asc(chapters.number), asc(verses.number));
 
-  const result: Record<string, Record<string, Record<string, string>>> = {};
+  const version = toVersionMeta(row);
 
-  for (const book of allBooks) {
-    const bookChapters = await db
-      .select()
-      .from(chapters)
-      .where(eq(chapters.bookId, book.id))
-      .orderBy(chapters.number);
-
-    const chaptersObj: Record<string, Record<string, string>> = {};
-
-    for (const chapter of bookChapters) {
-      const chapterVerses = await db
-        .select()
-        .from(verses)
-        .where(eq(verses.chapterId, chapter.id))
-        .orderBy(verses.number);
-
-      const versesObj: Record<string, string> = {};
-      for (const verse of chapterVerses) {
-        versesObj[String(verse.number)] = verse.text;
-      }
-
-      chaptersObj[String(chapter.number)] = versesObj;
+  if (format === "legacy") {
+    const nested: Record<string, Record<string, Record<string, string>>> = {};
+    for (const r of verseRows) {
+      const book = (nested[r.bookCode] ??= {});
+      const chapter = (book[String(r.chapter)] ??= {});
+      chapter[String(r.verse)] = cleanVerseText(r.text);
     }
-
-    result[book.bookCode] = chaptersObj;
+    // Kept byte-compatible with the old shape, including its attribution rule.
+    const legacyAttribution =
+      row.license && row.license.includes("CC")
+        ? `${row.name}${row.sourceUrl ? ` (${row.sourceUrl})` : ""}`
+        : undefined;
+    return c.json(
+      {
+        data: {
+          version: { abbreviation: version.abbreviation, name: version.name, license: version.license },
+          books: nested,
+          ...(legacyAttribution ? { attribution: legacyAttribution } : {}),
+        },
+      },
+      200
+    );
   }
 
-  const response: Record<string, unknown> = {
-    version: {
-      abbreviation: canonicalizeVersionAbbreviation(ver.abbreviation),
-      name: ver.name,
-      license: ver.license,
-    },
-    books: result,
+  type DownloadBook = {
+    bookCode: string;
+    code: string;
+    name: string;
+    position: number;
+    testament: string;
+    chapters: { number: number; verses: { number: number; text: string }[] }[];
   };
+  const bookList: DownloadBook[] = [];
+  let book: DownloadBook | undefined;
+  let chapter: DownloadBook["chapters"][number] | undefined;
 
-  // Include attribution for CC-licensed versions
-  if (ver.license && ver.license.includes("CC")) {
-    response.attribution = `${ver.name}${ver.sourceUrl ? ` (${ver.sourceUrl})` : ""}`;
+  // Rows arrive ordered, so grouping is a single pass with no lookups.
+  for (const r of verseRows) {
+    if (!book || book.bookCode !== r.bookCode) {
+      book = {
+        bookCode: r.bookCode,
+        code: r.bookCode,
+        name: r.bookName,
+        position: r.position,
+        testament: r.testament,
+        chapters: [],
+      };
+      bookList.push(book);
+      chapter = undefined;
+    }
+    if (!chapter || chapter.number !== r.chapter) {
+      chapter = { number: r.chapter, verses: [] };
+      book.chapters.push(chapter);
+    }
+    chapter.verses.push({ number: r.verse, text: cleanVerseText(r.text) });
   }
 
-  return c.json({ data: response });
+  return c.json(
+    {
+      data: {
+        version: {
+          id: version.id,
+          abbreviation: version.abbreviation,
+          name: version.name,
+          license: version.license,
+          licenseType: version.licenseType,
+          attribution: version.attribution,
+          attributionUrl: version.attributionUrl,
+          languageCode: version.languageCode,
+          textDirection: version.textDirection,
+        },
+        name: version.name,
+        languageCode: version.languageCode,
+        books: bookList,
+      },
+    },
+    200
+  );
 });
 
 export { versionsRouter };

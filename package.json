@@ -10,7 +10,7 @@
     "start": "node --env-file=.env dist/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file=.env src/db/migrate.ts",
-    "seed": "tsx --env-file=.env --expose-gc src/seeder/cli.ts",
+    "seed": "DB_STATEMENT_TIMEOUT_MS=0 tsx --env-file=.env --expose-gc src/seeder/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

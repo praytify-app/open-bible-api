@@ -13,6 +13,7 @@ import { dailyRouter } from "./routes/daily.js";
 import { adminRouter } from "./routes/admin.js";
 import { esvAudioRouter } from "./routes/esv-audio.js";
 import { runMigrations } from "./db/run-migrations.js";
+import { queryClient } from "./db/client.js";
 
 const app = new OpenAPIHono();
 
@@ -119,11 +120,34 @@ async function start() {
 
   console.log(`Starting Open Bible API on ${host}:${port}`);
 
-  serve({
+  const server = serve({
     fetch: app.fetch,
     port,
     hostname: host,
   });
+
+  // Deploys send SIGTERM. Stop accepting, let in-flight requests finish,
+  // then close the pool so Postgres sees clean disconnects instead of
+  // dropped sockets. The hard deadline stays under Docker's 10 s default.
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} received, shutting down`);
+
+    setTimeout(() => {
+      console.error("Shutdown deadline exceeded, exiting");
+      process.exit(1);
+    }, 8_000).unref();
+
+    server.close(async () => {
+      await queryClient.end({ timeout: 5 });
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 if (isMainModule) {

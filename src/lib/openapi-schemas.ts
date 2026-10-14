@@ -108,6 +108,27 @@ export const ChapterMetaSchema = z
   })
   .openapi("ChapterMeta");
 
+export const SearchResultSchema = z
+  .object({
+    id: z.number().int().openapi({ description: "Verse numeric ID" }),
+    text: z.string().openapi({ description: "Verse text, markup removed" }),
+    verseNumber: z.number().int().openapi({ example: 16 }),
+    chapterNumber: z.number().int().openapi({ example: 3 }),
+    bookName: z.string().openapi({ example: "John" }),
+    bookCode: z.string().openapi({ example: "JHN" }),
+    versionAbbreviation: z.string().openapi({ example: "KJV" }),
+    license: z.string().nullable(),
+    attribution: z.string().nullable(),
+    attributionUrl: z.string().nullable(),
+    rank: z.number().openapi({ description: "Relevance score; higher is better. Comparable only within one response." }),
+    verse_number: z.number().int().openapi({ deprecated: true, description: "Deprecated: use verseNumber" }),
+    chapter_number: z.number().int().openapi({ deprecated: true, description: "Deprecated: use chapterNumber" }),
+    book_name: z.string().openapi({ deprecated: true, description: "Deprecated: use bookName" }),
+    book_code: z.string().openapi({ deprecated: true, description: "Deprecated: use bookCode" }),
+    version_abbreviation: z.string().openapi({ deprecated: true, description: "Deprecated: use versionAbbreviation" }),
+  })
+  .openapi("SearchResult");
+
 // --- Query Parameter Schemas ---
 
 export const PaginationQuerySchema = z.object({

@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import { secretsMatch } from "../lib/secure-compare.js";
 
 export function adminAuth(): MiddlewareHandler {
   return async (c, next) => {
@@ -20,7 +21,8 @@ export function adminAuth(): MiddlewareHandler {
 
     const token = authHeader.slice(7);
 
-    if (token !== adminToken) {
+    // An unset ADMIN_TOKEN locks the admin surface rather than opening it.
+    if (!adminToken || !secretsMatch(token, adminToken)) {
       return c.json(
         {
           error: {

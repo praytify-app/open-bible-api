@@ -58,6 +58,44 @@ export const VerseSchema = z.object({
   text: z.string().openapi({ description: "Verse text content" }),
 });
 
+export const PassageVerseSchema = z.object({
+  id: z.number().int().openapi({ description: "Verse numeric ID" }),
+  number: z.number().int().openapi({ description: "Verse number", example: 16 }),
+  text: z.string().openapi({ description: "Verse text, markup removed" }),
+});
+
+/** Licensing facts every scripture payload carries, read from the version row. */
+const versionLicensingFields = {
+  license: z.string().nullable().openapi({ description: "License or copyright statement for the version" }),
+  attribution: z.string().nullable().openapi({ description: "Attribution text to display with the passage" }),
+  attributionUrl: z.string().nullable().openapi({ description: "Link for the attribution" }),
+  languageCode: z.string().nullable().openapi({ description: "ISO 639-3 language code", example: "eng" }),
+  textDirection: z.string().nullable().openapi({ description: "ltr or rtl", example: "ltr" }),
+};
+
+export const PassageSchema = z
+  .object({
+    reference: z.string().openapi({ description: "The reference as requested", example: "John 3:16" }),
+    version: z.string().openapi({ description: "Version abbreviation", example: "WEB" }),
+    verses: z.array(PassageVerseSchema),
+    bookCode: z.string().openapi({ description: "USFM book code", example: "JHN" }),
+    bookName: z.string().openapi({ description: "Book name in this version", example: "John" }),
+    chapter: z.number().int().openapi({ example: 3 }),
+    verseStart: z.number().int().openapi({ description: "First verse returned", example: 16 }),
+    verseEnd: z.number().int().openapi({ description: "Last verse returned", example: 16 }),
+    ...versionLicensingFields,
+  })
+  .openapi("Passage");
+
+export const ParallelPassageSchema = z
+  .object({
+    reference: z.string(),
+    versions: z
+      .record(z.string(), z.union([PassageSchema, z.object({ error: z.string() })]))
+      .openapi({ description: "Keyed by the version code requested. A version that failed carries `error`." }),
+  })
+  .openapi("ParallelPassage");
+
 // --- Query Parameter Schemas ---
 
 export const PaginationQuerySchema = z.object({

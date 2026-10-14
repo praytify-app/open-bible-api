@@ -33,6 +33,9 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/package.json ./
 COPY drizzle ./drizzle
 
+# The one writable path: the seeder caches eBible downloads here.
+RUN mkdir -p /app/.cache && chown appuser:appgroup /app/.cache
+
 USER appuser
 EXPOSE 3100
 

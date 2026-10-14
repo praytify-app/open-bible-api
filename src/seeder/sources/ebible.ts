@@ -1,12 +1,19 @@
 import { mkdirSync, existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import type { ParsedBook } from "../usfm-parser.js";
 import { parseBibleFile } from "../parser.js";
 import { getBookMeta } from "../book-metadata.js";
 
-const CACHE_DIR = join(process.cwd(), ".cache", "ebible");
+/**
+ * Where downloaded zips and extracted USFM live. EBIBLE_CACHE_DIR lets a
+ * container keep its root filesystem read-only and point this at a mounted
+ * volume or tmpfs; the default is the repo-local cache.
+ */
+export function ebibleCacheDir(env: Record<string, string | undefined> = process.env): string {
+  return env.EBIBLE_CACHE_DIR ? resolve(env.EBIBLE_CACHE_DIR) : join(process.cwd(), ".cache", "ebible");
+}
 const EBIBLE_BASE_URL = "https://ebible.org/Scriptures";
 
 /**
@@ -21,12 +28,13 @@ const EBIBLE_BASE_URL = "https://ebible.org/Scriptures";
 export async function downloadAndParseEbible(
   translationId: string
 ): Promise<ParsedBook[]> {
-  const translationDir = join(CACHE_DIR, translationId);
-  const zipPath = join(CACHE_DIR, `${translationId}_usfm.zip`);
+  const cacheDir = ebibleCacheDir();
+  const translationDir = join(cacheDir, translationId);
+  const zipPath = join(cacheDir, `${translationId}_usfm.zip`);
   const extractDir = join(translationDir, "usfm");
 
   // Ensure cache directory exists
-  mkdirSync(CACHE_DIR, { recursive: true });
+  mkdirSync(cacheDir, { recursive: true });
 
   // Download if not cached
   if (!existsSync(extractDir)) {

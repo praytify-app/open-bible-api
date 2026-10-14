@@ -112,6 +112,41 @@ program
   });
 
 program
+  .command("seed-sample")
+  .description(
+    "Migrate, then seed a public-domain sample (WEB, KJV, Arabic Van Dyck), daily verses, and search indexes"
+  )
+  .option("--force", "Re-import sample versions that already exist")
+  .action(async (opts) => {
+    try {
+      const { runMigrations } = await import("../db/run-migrations.js");
+      const { SAMPLE_TRANSLATIONS, seedSampleTranslations } = await import("./sample.js");
+      const { seedDailyVerses } = await import("./daily-verses-seed.js");
+      const { buildSearchInfra } = await import("../db/search-infra.js");
+
+      await runMigrations(process.env.DATABASE_URL!);
+
+      const results = await seedSampleTranslations(opts.force);
+      const failed = results.filter((r) => r.status === "failed");
+      if (failed.length > 0) {
+        throw new Error(`Sample import failed for: ${failed.map((r) => r.translationId).join(", ")}`);
+      }
+
+      await seedDailyVerses();
+      await buildSearchInfra(process.env.DATABASE_URL!, {
+        sourceUrls: SAMPLE_TRANSLATIONS.map((t) => t.sourceUrl),
+      });
+
+      console.log("Sample ready: WEB, KJV, and AVD with daily verses and search.");
+    } catch (err) {
+      console.error("Sample seed failed:", err);
+      process.exitCode = 1;
+    } finally {
+      await queryClient.end();
+    }
+  });
+
+program
   .command("seed-daily")
   .description("Seed 366 curated daily verses into the database")
   .action(async () => {

@@ -7,3 +7,11 @@ packages:
 # tsx, vitest, and drizzle-kit) is the only dependency that ships one.
 allowBuilds:
   esbuild: true
+
+# Transitive security floors, kept within each package's current major.
+# Drop an entry once the parent ships the fix.
+overrides:
+  # GHSA nanoid (infinite loop, integer overflow), via @scalar/hono-api-reference
+  nanoid@>=4.0.0 <5.1.16: "^5.1.16"
+  # yaml stack overflow on deeply nested input, via @hono/zod-openapi
+  yaml@>=2.0.0 <2.8.3: "^2.8.3"

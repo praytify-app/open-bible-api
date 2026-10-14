@@ -161,14 +161,29 @@ export function successListSchema<T extends z.ZodTypeAny>(itemSchema: T) {
 
 // --- Daily Verse Schema ---
 
-export const DailyVerseSchema = z.object({
-  dayOfYear: z.number().int().openapi({ description: "Day of year (1-366)" }),
-  reference: z.string().openapi({ description: "Bible reference", example: "John 3:16" }),
-  text: z.string().openapi({ description: "Verse text" }),
-  version: z.string().openapi({ description: "Version abbreviation", example: "KJV" }),
-  requestedVersion: z.string().optional().openapi({ description: "Originally requested version (if different)" }),
-  note: z.string().optional().openapi({ description: "Note about version mismatch" }),
-});
+export const DailyVerseSchema = z
+  .object({
+    dayOfYear: z.number().int().openapi({
+      description: "Calendar slot 1-366 on a leap-year calendar, so a date always maps to the same verse (Feb 29 is 60, Dec 31 is 366)",
+    }),
+    date: z.string().openapi({ description: "The UTC date served, YYYY-MM-DD", example: "2026-10-14" }),
+    reference: z.string().openapi({ description: "Bible reference (English)", example: "John 3:16" }),
+    text: z.string().openapi({ description: "Verse text in `version`" }),
+    version: z.string().openapi({ description: "Version the text is in", example: "WEB" }),
+    bookCode: z.string().optional().openapi({ description: "USFM book code", example: "JHN" }),
+    bookName: z.string().optional().openapi({ description: "Book name in `version`, when served from the corpus" }),
+    chapter: z.number().int().optional(),
+    verseStart: z.number().int().optional(),
+    verseEnd: z.number().int().optional(),
+    license: z.string().nullable().optional(),
+    attribution: z.string().nullable().optional(),
+    attributionUrl: z.string().nullable().optional(),
+    languageCode: z.string().nullable().optional(),
+    textDirection: z.string().nullable().optional(),
+    requestedVersion: z.string().optional().openapi({ description: "Set only when the requested version lacks the verse and the curated text was served instead" }),
+    note: z.string().optional().openapi({ description: "Explains the fallback when requestedVersion is set" }),
+  })
+  .openapi("DailyVerse");
 
 // --- Admin Schemas ---
 

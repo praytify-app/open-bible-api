@@ -232,6 +232,7 @@ describe("DailyVerseSchema", () => {
   it("accepts a daily verse", () => {
     const result = DailyVerseSchema.safeParse({
       dayOfYear: 74,
+      date: "2026-03-15",
       reference: "John 3:16",
       text: "For God so loved...",
       version: "KJV",
@@ -242,6 +243,7 @@ describe("DailyVerseSchema", () => {
   it("accepts with optional fields", () => {
     const result = DailyVerseSchema.safeParse({
       dayOfYear: 74,
+      date: "2026-03-15",
       reference: "John 3:16",
       text: "For God so loved...",
       version: "KJV",
@@ -249,6 +251,16 @@ describe("DailyVerseSchema", () => {
       note: "Verse seeded in KJV",
     });
     expect(result.success).toBe(true);
+  });
+
+  it("requires the served date", () => {
+    const result = DailyVerseSchema.safeParse({
+      dayOfYear: 74,
+      reference: "John 3:16",
+      text: "For God so loved...",
+      version: "KJV",
+    });
+    expect(result.success).toBe(false);
   });
 });
 

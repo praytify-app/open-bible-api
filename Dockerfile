@@ -4,7 +4,7 @@ FROM node:24.21-alpine3.24 AS base
 # Node 24 still bundles corepack (Node 25+ does not). The pnpm version comes
 # from the packageManager field in package.json.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable && corepack prepare pnpm@11.28.2 --activate
+RUN corepack enable && corepack prepare pnpm@12.11.2 --activate
 WORKDIR /app
 
 # Stage 2: Production dependencies only

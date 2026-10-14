@@ -96,6 +96,18 @@ export const ParallelPassageSchema = z
   })
   .openapi("ParallelPassage");
 
+export const ChapterMetaSchema = z
+  .object({
+    version: z.string().openapi({ example: "KJV" }),
+    versionName: z.string().openapi({ example: "King James Version" }),
+    bookCode: z.string().openapi({ example: "JHN" }),
+    bookName: z.string().openapi({ description: "Book name in this version", example: "John" }),
+    chapter: z.number().int().openapi({ example: 3 }),
+    licenseType: z.string().openapi({ description: "PD, CC_BY, CC_BY_SA, or COPYRIGHTED_REDISTRIBUTABLE", example: "PD" }),
+    ...versionLicensingFields,
+  })
+  .openapi("ChapterMeta");
+
 // --- Query Parameter Schemas ---
 
 export const PaginationQuerySchema = z.object({

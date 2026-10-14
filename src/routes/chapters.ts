@@ -1,12 +1,15 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
-import { chapters, verses, books, versions } from "../db/schema.js";
-import { eq, and, inArray } from "drizzle-orm";
+import { chapters, verses, books, versions, languages } from "../db/schema.js";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { getVersionAbbreviationCandidates } from "../lib/version-abbreviations.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
-import { VerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
+import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
+import { VerseSchema, ErrorSchema, ChapterMetaSchema } from "../lib/openapi-schemas.js";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function cleanVerseRows(rows: { id: number; chapterId: string; number: number; text: string }[]) {
   return rows.map((r) => ({ ...r, text: cleanVerseText(r.text) }));
@@ -20,11 +23,13 @@ const versesByRefRoute = createRoute({
   path: "/{version}/{bookCode}/{chapter}/verses",
   tags: ["Chapters"],
   summary: "Get verses by version/book/chapter",
-  description: "Lookup verses by version abbreviation, book code, and chapter number. Supports API Bible proxy for copyrighted versions.",
+  description:
+    "All verses of one chapter, addressed by version abbreviation, USFM book code, and chapter number. " +
+    "`meta` carries the book name and the version's license and attribution for display.",
   request: {
     params: z.object({
       version: z.string().openapi({ description: "Version abbreviation", example: "KJV" }),
-      bookCode: z.string().openapi({ description: "Book code", example: "GEN" }),
+      bookCode: z.string().openapi({ description: "USFM book code", example: "GEN" }),
       chapter: z.string().openapi({ description: "Chapter number", example: "1" }),
     }),
   },
@@ -33,7 +38,7 @@ const versesByRefRoute = createRoute({
       description: "List of verses",
       content: {
         "application/json": {
-          schema: z.object({ data: z.array(VerseSchema) }),
+          schema: z.object({ data: z.array(VerseSchema), meta: ChapterMetaSchema }),
         },
       },
     },
@@ -77,81 +82,87 @@ const versesByChapterIdRoute = createRoute({
 
 // --- Handlers ---
 
-chaptersRouter.openapi(versesByRefRoute, async (c): Promise<any> => {
+chaptersRouter.openapi(versesByRefRoute, async (c) => {
   const versionAbbr = c.req.param("version");
-  const bookCode = c.req.param("bookCode");
-  const chapter = c.req.param("chapter");
-  const chapterNum = parseInt(chapter, 10);
+  const bookCode = c.req.param("bookCode").toUpperCase();
+  const chapterNum = parseInt(c.req.param("chapter"), 10);
 
-  if (isNaN(chapterNum)) {
-    return errorResponse(c, 400, "BAD_REQUEST", "Chapter must be a number");
+  if (isNaN(chapterNum) || chapterNum < 1) {
+    return errorResponse(c, 400, "BAD_REQUEST", "Chapter must be a positive number");
   }
 
-  // Find the version
-  const ver = await db
-    .select({ id: versions.id })
+  // Query 1: the version and, via the join condition, its matching book.
+  // A version row with a null book means the version exists but lacks it.
+  const candidates = getVersionAbbreviationCandidates(versionAbbr);
+  const found = await db
+    .select({
+      version: versionMetaColumns,
+      bookId: books.id,
+      bookName: books.name,
+    })
     .from(versions)
-    .where(
-      inArray(versions.abbreviation, getVersionAbbreviationCandidates(versionAbbr))
-    )
-    .limit(1);
+    .leftJoin(languages, eq(versions.languageId, languages.id))
+    .leftJoin(books, and(eq(books.versionId, versions.id), eq(books.bookCode, bookCode)))
+    .where(inArray(versions.abbreviation, candidates));
 
-  if (ver.length === 0) {
-    return errorResponse(
-      c,
-      404,
-      "NOT_FOUND",
-      `Version '${versionAbbr}' not found`
-    );
+  const match = candidates
+    .map((abbr) => found.find((row) => row.version.abbreviation === abbr))
+    .find(Boolean);
+
+  if (!match) {
+    return errorResponse(c, 404, "NOT_FOUND", `Version '${versionAbbr}' not found`);
+  }
+  if (!match.bookId || !match.bookName) {
+    return errorResponse(c, 404, "NOT_FOUND", `Book '${bookCode}' not found in ${versionAbbr}`);
   }
 
-  // Find the book
-  const book = await db
-    .select({ id: books.id })
-    .from(books)
-    .where(
-      and(eq(books.versionId, ver[0].id), eq(books.bookCode, bookCode))
-    )
-    .limit(1);
-
-  if (book.length === 0) {
-    return errorResponse(
-      c,
-      404,
-      "NOT_FOUND",
-      `Book '${bookCode}' not found in ${versionAbbr}`
-    );
-  }
-
-  // Find the chapter
-  const chapterRow = await db
-    .select({ id: chapters.id })
-    .from(chapters)
-    .where(
-      and(eq(chapters.bookId, book[0].id), eq(chapters.number, chapterNum))
-    )
-    .limit(1);
-
-  if (chapterRow.length === 0) {
-    return errorResponse(
-      c,
-      404,
-      "NOT_FOUND",
-      `Chapter ${chapterNum} not found in ${bookCode}`
-    );
-  }
-
+  // Query 2: the chapter's verses through the (book_id, number) and
+  // (chapter_id, number) unique indexes.
   const verseRows = await db
-    .select()
+    .select({
+      id: verses.id,
+      chapterId: verses.chapterId,
+      number: verses.number,
+      text: verses.text,
+    })
     .from(verses)
-    .where(eq(verses.chapterId, chapterRow[0].id))
-    .orderBy(verses.number);
+    .innerJoin(chapters, eq(verses.chapterId, chapters.id))
+    .where(and(eq(chapters.bookId, match.bookId), eq(chapters.number, chapterNum)))
+    .orderBy(asc(verses.number));
 
-  return success(c, cleanVerseRows(verseRows));
+  if (verseRows.length === 0) {
+    return errorResponse(c, 404, "NOT_FOUND", `Chapter ${chapterNum} not found in ${bookCode}`);
+  }
+
+  const version = toVersionMeta(match.version);
+  return c.json(
+    {
+      data: cleanVerseRows(verseRows),
+      meta: {
+        version: version.abbreviation,
+        versionName: version.name,
+        bookCode,
+        bookName: match.bookName,
+        chapter: chapterNum,
+        license: version.license,
+        licenseType: version.licenseType,
+        attribution: version.attribution,
+        attributionUrl: version.attributionUrl,
+        languageCode: version.languageCode,
+        textDirection: version.textDirection,
+      },
+    },
+    200
+  );
 });
 
 chaptersRouter.openapi(versesByChapterIdRoute, async (c) => {
   const id = c.req.param("id");
+
+  // A non-UUID would reach Postgres as an invalid cast and surface as a 500.
+  if (!UUID.test(id)) {
+    return errorResponse(c, 404, "NOT_FOUND", `Chapter '${id}' not found`);
+  }
 
   const chapter = await db
     .select({ id: chapters.id })

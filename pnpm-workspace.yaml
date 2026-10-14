@@ -1,0 +1,7 @@
+# Single-package repo. This file exists for pnpm settings, and so pnpm stops
+# here instead of walking up to a pnpm-workspace.yaml in a parent directory.
+
+# pnpm 10+ skips dependency lifecycle scripts unless allowed. esbuild (via
+# tsx, vitest, and drizzle-kit) is the only dependency that ships one.
+allowBuilds:
+  esbuild: true

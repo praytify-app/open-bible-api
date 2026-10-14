@@ -9,7 +9,10 @@ services:
       HOST: "0.0.0.0"
       ADMIN_TOKEN: "${ADMIN_TOKEN:-dev-admin-token}"
       CORS_ORIGINS: "${CORS_ORIGINS:-*}"
-      RATE_LIMIT: "${RATE_LIMIT:-100}"
+      # The code previously ignored RATE_LIMIT and used 1000, so that stays the default.
+      RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-1000}"
+      GATEWAY_TOKEN: "${GATEWAY_TOKEN:-}"
+      MIGRATE_ON_BOOT: "${MIGRATE_ON_BOOT:-true}"
     depends_on:
       db:
         condition: service_healthy

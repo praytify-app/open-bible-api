@@ -2,7 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { serve } from "@hono/node-server";
 import { apiReference } from "@scalar/hono-api-reference";
 import { corsMiddleware } from "./middleware/cors.js";
-import { rateLimit } from "./middleware/rate-limit.js";
+import { rateLimit, rateLimitMaxFromEnv } from "./middleware/rate-limit.js";
 import { languagesRouter } from "./routes/languages.js";
 import { versionsRouter } from "./routes/versions.js";
 import { booksRouter } from "./routes/books.js";
@@ -20,13 +20,14 @@ const app = new OpenAPIHono();
 // Global CORS middleware
 app.use("*", corsMiddleware(process.env.CORS_ORIGINS || "*"));
 
-// Global rate limiter
-const maxRequests = parseInt(process.env.RATE_LIMIT_MAX || "1000", 10);
+// Per-client limiter for direct traffic. Requests carrying the gateway's
+// token bypass it because the gateway enforces its own quotas.
 app.use(
   "*",
   rateLimit({
-    maxRequests,
+    maxRequests: rateLimitMaxFromEnv(),
     windowMs: 60 * 60 * 1000, // 1 hour
+    gatewayToken: process.env.GATEWAY_TOKEN || undefined,
   })
 );
 

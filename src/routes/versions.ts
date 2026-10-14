@@ -18,6 +18,7 @@ import {
   PaginationMetaSchema,
   DownloadBooksSchema,
   DownloadLegacySchema,
+  VersionListItemSchema,
 } from "../lib/openapi-schemas.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,7 +54,7 @@ const listVersionsRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            data: z.array(z.any()),
+            data: z.array(VersionListItemSchema),
             meta: PaginationMetaSchema.optional(),
           }),
         },

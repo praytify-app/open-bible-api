@@ -22,6 +22,8 @@ const adminStatsRoute = createRoute({
   method: "get",
   path: "/stats",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Get database statistics",
   description: "Returns counts of languages, versions, verses, and database size. Requires admin authentication.",
   responses: {
@@ -44,6 +46,8 @@ const createVersionRoute = createRoute({
   method: "post",
   path: "/versions",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Create a new Bible version",
   description: "Add a new Bible version to the database. Requires admin authentication.",
   request: {
@@ -60,7 +64,7 @@ const createVersionRoute = createRoute({
       description: "Version created",
       content: {
         "application/json": {
-          schema: z.object({ data: z.any() }),
+          schema: z.object({ data: VersionSchema }),
         },
       },
     },
@@ -83,6 +87,8 @@ const seedRoute = createRoute({
   method: "post",
   path: "/seed",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Seed placeholder",
   description: "Returns instructions for seeding via CLI. Requires admin authentication.",
   responses: {
@@ -106,6 +112,8 @@ const deleteVersionRoute = createRoute({
   method: "delete",
   path: "/versions/{id}",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Delete a Bible version",
   description: "Delete a version and all its associated books, chapters, and verses (CASCADE). Requires admin authentication.",
   request: {

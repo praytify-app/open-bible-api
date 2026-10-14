@@ -15,7 +15,7 @@ export const LanguageSchema = z.object({
 
 export const VersionSchema = z.object({
   id: z.string().uuid().openapi({ description: "Unique version identifier" }),
-  abbreviation: z.string().max(20).openapi({ description: "Short abbreviation", example: "KJV" }),
+  abbreviation: z.string().max(100).openapi({ description: "Short abbreviation", example: "KJV" }),
   name: z.string().max(200).openapi({ description: "Full version name", example: "King James Version" }),
   description: z.string().nullable().openapi({ description: "Version description" }),
   license: z.string().nullable().openapi({ description: "License type" }),
@@ -33,6 +33,12 @@ export const VersionSchema = z.object({
   languageNativeName: z.string().nullable().optional().openapi({ description: "Language name in its own script" }),
   textDirection: z.string().nullable().optional().openapi({ description: "Text direction: ltr or rtl", example: "ltr" }),
 });
+
+export const VersionListItemSchema = VersionSchema.extend({
+  source: z.literal("self-hosted").openapi({ description: "Where the text is served from" }),
+  isOfflineCapable: z.boolean().openapi({ description: "Whether the full text can be downloaded" }),
+  attributionRequired: z.boolean().openapi({ description: "True unless the version is public domain" }),
+}).openapi("VersionListItem");
 
 export const BookSchema = z.object({
   id: z.string().uuid().openapi({ description: "Unique book identifier" }),

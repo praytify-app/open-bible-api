@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { etag } from "hono/etag";
 import { serve } from "@hono/node-server";
@@ -61,13 +62,27 @@ app.route("/api/v1/daily", dailyRouter);
 app.route("/api/v1/admin", adminRouter);
 app.route("/api/v1/esv/audio", esvAudioRouter);
 
+// Read at runtime: package.json sits outside rootDir, and this resolves the
+// same way from src/ under tsx and from dist/ in the container.
+const { version: packageVersion } = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8")
+) as { version: string };
+
+// The gateway enforces API keys and rewrites /api/v1 to /v1 for the public
+// spec; the scheme is declared here so operations can reference it.
+app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
+  type: "http",
+  scheme: "bearer",
+  description: "API key issued by the Praytify Bible portal, sent as a bearer token",
+});
+
 // OpenAPI spec endpoint
 app.doc("/api/v1/openapi.json", {
   openapi: "3.1.0",
   info: {
     title: "Open Bible API",
-    version: "1.0.0",
-    description: "Open-source REST API serving Bible data from eBible.org. 600+ translations, 100+ languages.",
+    version: packageVersion,
+    description: "Open-source REST API serving Bible text imported from eBible.org.",
     license: { name: "MIT", url: "https://opensource.org/licenses/MIT" },
     contact: { name: "Praytify", url: "https://praytify.bible" },
   },

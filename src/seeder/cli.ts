@@ -6,13 +6,14 @@ import { languages, versions } from "../db/schema.js";
 import { sql, eq } from "drizzle-orm";
 import { fetchCatalog, filterByLicense } from "./catalog.js";
 import { runBatchImport, createBatchReport, formatElapsed } from "./batch-runner.js";
+import { PACKAGE_VERSION } from "../lib/package-version.js";
 
 const program = new Command();
 
 program
   .name("open-bible-seed")
   .description("Seed Bible translations into the database")
-  .version("1.0.0");
+  .version(PACKAGE_VERSION);
 
 program
   .command("seed")

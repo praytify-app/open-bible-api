@@ -3,18 +3,17 @@ import { db } from "../db/client.js";
 import { chapters, verses, books, versions } from "../db/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
-import { cacheControl } from "../middleware/cache.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { getVersionAbbreviationCandidates } from "../lib/version-abbreviations.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import { VerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
-
-const THIRTY_DAYS = 2592000;
 
 function cleanVerseRows(rows: { id: number; chapterId: string; number: number; text: string }[]) {
   return rows.map((r) => ({ ...r, text: cleanVerseText(r.text) }));
 }
 
 const chaptersRouter = new OpenAPIHono();
+chaptersRouter.use("*", cacheControl(CachePolicy.scripture));
 
 const versesByRefRoute = createRoute({
   method: "get",

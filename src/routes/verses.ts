@@ -3,7 +3,7 @@ import { db } from "../db/client.js";
 import { verses, chapters, books, versions, languages } from "../db/schema.js";
 import { eq, and, sql, ilike, inArray } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
-import { cacheControl } from "../middleware/cache.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { parseReference } from "../lib/reference-parser.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import {
@@ -12,9 +12,8 @@ import {
 } from "../lib/version-abbreviations.js";
 import { VerseSchema, VerseRefQuerySchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
-const THIRTY_DAYS = 2592000;
-
 const versesRouter = new OpenAPIHono();
+versesRouter.use("*", cacheControl(CachePolicy.scripture));
 
 const verseRefRoute = createRoute({
   method: "get",

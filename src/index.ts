@@ -1,8 +1,10 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { etag } from "hono/etag";
 import { serve } from "@hono/node-server";
 import { apiReference } from "@scalar/hono-api-reference";
 import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimit, rateLimitMaxFromEnv } from "./middleware/rate-limit.js";
+import { CachePolicy, noStoreOnError } from "./middleware/cache.js";
 import { languagesRouter } from "./routes/languages.js";
 import { versionsRouter } from "./routes/versions.js";
 import { booksRouter } from "./routes/books.js";
@@ -31,8 +33,16 @@ app.use(
   })
 );
 
+app.use("*", noStoreOnError());
+
+// Strong ETags over the response body, with If-None-Match answered as 304.
+// Bodies only change on a reseed, so a content hash is the right validator
+// and no seed-version bookkeeping is needed. Applies to 2xx GET/HEAD only.
+app.use("/api/v1/*", etag());
+
 // Health check
 app.get("/api/v1/health", (c) => {
+  c.header("Cache-Control", CachePolicy.noStore);
   return c.json({
     status: "ok",
     timestamp: new Date().toISOString(),

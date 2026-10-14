@@ -3,7 +3,7 @@ import { db } from "../db/client.js";
 import { verses, chapters, books, versions, languages } from "../db/schema.js";
 import { eq, and, sql, ilike, inArray } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
-import { cacheControl } from "../middleware/cache.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { PG_DICTIONARIES, getPgDictionary } from "../lib/pg-dictionaries.js";
 import {
   canonicalizeVersionAbbreviation,
@@ -11,9 +11,8 @@ import {
 } from "../lib/version-abbreviations.js";
 import { SearchQuerySchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
-const ONE_HOUR = 3600;
-
 const searchRouter = new OpenAPIHono();
+searchRouter.use("*", cacheControl(CachePolicy.search));
 
 const searchRoute = createRoute({
   method: "get",

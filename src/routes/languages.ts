@@ -3,7 +3,7 @@ import { db } from "../db/client.js";
 import { languages, versions } from "../db/schema.js";
 import { eq, count, sql } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
-import { cacheControl } from "../middleware/cache.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import {
   LanguageSchema,
   VersionSchema,
@@ -12,9 +12,8 @@ import {
   PaginationMetaSchema,
 } from "../lib/openapi-schemas.js";
 
-const TWENTY_FOUR_HOURS = 86400;
-
 const languagesRouter = new OpenAPIHono();
+languagesRouter.use("*", cacheControl(CachePolicy.scripture));
 
 // --- Route definitions ---
 

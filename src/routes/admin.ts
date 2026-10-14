@@ -4,6 +4,7 @@ import { languages, versions, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { adminAuth } from "../middleware/admin-auth.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import {
   AdminStatsSchema,
   CreateVersionBodySchema,
@@ -13,7 +14,8 @@ import {
 
 const adminRouter = new OpenAPIHono();
 
-// All admin routes require auth
+// All admin routes require auth and are never cached
+adminRouter.use("*", cacheControl(CachePolicy.noStore));
 adminRouter.use("*", adminAuth());
 
 const adminStatsRoute = createRoute({

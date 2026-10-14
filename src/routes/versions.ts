@@ -3,7 +3,7 @@ import { db } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql, and, inArray, or, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
-import { cacheControl } from "../middleware/cache.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import {
   canonicalizeVersionAbbreviation,
   getVersionAbbreviationCandidates,
@@ -16,11 +16,8 @@ import {
   PaginationMetaSchema,
 } from "../lib/openapi-schemas.js";
 
-const TWENTY_FOUR_HOURS = 86400;
-const SEVEN_DAYS = 604800;
-const THIRTY_DAYS = 2592000;
-
 const versionsRouter = new OpenAPIHono();
+versionsRouter.use("*", cacheControl(CachePolicy.scripture));
 
 function mapVersionForResponse<T extends { abbreviation: string }>(version: T): T {
   return {

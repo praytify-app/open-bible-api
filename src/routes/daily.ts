@@ -3,10 +3,13 @@ import { db } from "../db/client.js";
 import { dailyVerses, versions, verses, chapters, books } from "../db/schema.js";
 import { eq, and, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { canonicalizeVersionAbbreviation } from "../lib/version-abbreviations.js";
 import { DailyVerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
 const dailyRouter = new OpenAPIHono();
+// The handler sets its own expiry; this covers errors and the fallback.
+dailyRouter.use("*", cacheControl(CachePolicy.search));
 
 const dailyVerseRoute = createRoute({
   method: "get",

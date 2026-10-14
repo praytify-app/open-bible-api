@@ -12,6 +12,7 @@ import { searchRouter } from "./routes/search.js";
 import { dailyRouter } from "./routes/daily.js";
 import { adminRouter } from "./routes/admin.js";
 import { esvAudioRouter } from "./routes/esv-audio.js";
+import { runMigrations } from "./db/run-migrations.js";
 
 const app = new OpenAPIHono();
 
@@ -106,9 +107,15 @@ const isMainModule =
   process.argv[1] &&
   (process.argv[1].endsWith("index.ts") || process.argv[1].endsWith("index.js"));
 
-if (isMainModule) {
+async function start() {
   const port = parseInt(process.env.PORT || "3100", 10);
   const host = process.env.HOST || "0.0.0.0";
+
+  // Opt-in so production keeps its explicit migrate step; self-hosters and
+  // the local e2e stack get a database that is ready by the time we listen.
+  if (process.env.MIGRATE_ON_BOOT === "true") {
+    await runMigrations(process.env.DATABASE_URL!);
+  }
 
   console.log(`Starting Open Bible API on ${host}:${port}`);
 
@@ -116,6 +123,13 @@ if (isMainModule) {
     fetch: app.fetch,
     port,
     hostname: host,
+  });
+}
+
+if (isMainModule) {
+  start().catch((err) => {
+    console.error("Startup failed:", err);
+    process.exit(1);
   });
 }
 

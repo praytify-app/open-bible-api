@@ -5,6 +5,7 @@
 ### Added
 
 - Version codes: every eBible import exposes `code`, its eBible translation id (`engwebp`, `eng-kjv2006`), on version objects, chapter `meta` (`versionCode`), and download metadata. A code is accepted anywhere a version abbreviation is: version detail, books, chapters, `?ref=` and parallel lookups, search, daily, and download. Imported abbreviations are often full titles with spaces, and one contains a slash, so codes are the URL-safe way to name a version. Abbreviations still win when a value matches both, so existing URLs keep resolving to the same version. Derived from `source_url`; no migration.
+- Version abbreviations and codes match in any case (`kjv`, `ENGWEBP`); an exact-case match is preferred.
 - `?ref=` lookups accept book names in any script, common abbreviations (`Jn 3:16`), USFM codes (`JHN 3:16`), and whole chapters (`Psalm 23`). Passages return `bookCode`, `bookName`, `chapter`, `verseStart`, `verseEnd`, licensing, `languageCode`, and `textDirection`.
 - Chapter responses carry a top-level `meta` with the translation's licensing and language.
 - The daily verse honours `?version=` and accepts `?date=YYYY-MM-DD` (UTC).

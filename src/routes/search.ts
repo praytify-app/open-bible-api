@@ -3,6 +3,7 @@ import { db } from "../db/client.js";
 import { languages, versions } from "../db/schema.js";
 import { and, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
+import { versionParamsWhere } from "../lib/version-lookup.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { getPgDictionary } from "../lib/pg-dictionaries.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
@@ -109,11 +110,16 @@ async function resolveScope(
   languageParam: string | undefined
 ): Promise<{ versionIds: string[]; languageCode: string | null } | null> {
   if (versionParam) {
-    const rows = await db
-      .select({ id: versions.id, languageCode: languages.code })
+    const found = await db
+      .select({ id: versions.id, languageCode: languages.code, abbreviation: versions.abbreviation })
       .from(versions)
       .leftJoin(languages, eq(versions.languageId, languages.id))
-      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(versionParam)));
+      .where(versionParamsWhere([versionParam]));
+    // Every version an abbreviation names (canonical and legacy rows alike);
+    // a code is only consulted when no abbreviation matches.
+    const candidates = getVersionAbbreviationCandidates(versionParam);
+    const byAbbreviation = found.filter((r) => candidates.includes(r.abbreviation));
+    const rows = byAbbreviation.length > 0 ? byAbbreviation : found;
     if (rows.length === 0) return null;
     return { versionIds: rows.map((r) => r.id), languageCode: rows[0].languageCode };
   }

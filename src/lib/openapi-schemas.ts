@@ -16,6 +16,10 @@ export const LanguageSchema = z.object({
 export const VersionSchema = z.object({
   id: z.string().uuid().openapi({ description: "Unique version identifier" }),
   abbreviation: z.string().max(100).openapi({ description: "Short abbreviation", example: "KJV" }),
+  code: z
+    .string()
+    .nullable()
+    .openapi({ description: "Stable URL-safe code (the eBible translation id), accepted wherever an abbreviation is. Prefer it in URLs: imported abbreviations can contain spaces or slashes. Null for versions from other sources", example: "eng-kjv2006" }),
   name: z.string().max(200).openapi({ description: "Full version name", example: "King James Version" }),
   description: z.string().nullable().openapi({ description: "Version description" }),
   license: z.string().nullable().openapi({ description: "License type" }),
@@ -105,6 +109,10 @@ export const ParallelPassageSchema = z
 export const ChapterMetaSchema = z
   .object({
     version: z.string().openapi({ example: "KJV" }),
+    versionCode: z
+      .string()
+      .nullable()
+      .openapi({ description: "Stable URL-safe version code (the eBible translation id); accepted wherever a version abbreviation is", example: "eng-kjv2006" }),
     versionName: z.string().openapi({ example: "King James Version" }),
     bookCode: z.string().openapi({ example: "JHN" }),
     bookName: z.string().openapi({ description: "Book name in this version", example: "John" }),
@@ -139,6 +147,7 @@ export const DownloadVersionMetaSchema = z
   .object({
     id: z.string().uuid(),
     abbreviation: z.string().openapi({ example: "WEB" }),
+    code: z.string().nullable().openapi({ description: "Stable URL-safe version code", example: "engwebp" }),
     name: z.string().openapi({ example: "World English Bible" }),
     licenseType: z.string().openapi({ example: "PD" }),
     ...versionLicensingFields,

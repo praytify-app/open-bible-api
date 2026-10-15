@@ -46,6 +46,7 @@ describe("GET /api/v1/versions/{id}/download", () => {
     expect(data.version).toEqual({
       id: VERSION_ROW.id,
       abbreviation: "YOR",
+      code: "yor",
       name: "Yoruba Bible",
       license: "Creative Commons Attribution 4.0",
       licenseType: "CC_BY",

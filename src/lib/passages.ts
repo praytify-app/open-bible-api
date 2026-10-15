@@ -4,15 +4,15 @@ import { books, chapters, languages, verses, versions } from "../db/schema.js";
 import { resolveBook } from "./book-names.js";
 import type { ParsedReference } from "./reference-parser.js";
 import { cleanVerseText } from "./text-cleaner.js";
-import {
-  canonicalizeVersionAbbreviation,
-  getVersionAbbreviationCandidates,
-} from "./version-abbreviations.js";
+import { canonicalizeVersionAbbreviation } from "./version-abbreviations.js";
+import { pickVersion, versionCode, versionParamsWhere } from "./version-lookup.js";
 
 /** Licensing and display facts every scripture payload carries, read from the version row. */
 export interface VersionMeta {
   id: string;
   abbreviation: string;
+  /** Stable URL-safe code (the eBible translation id), or null for versions from other sources. */
+  code: string | null;
   name: string;
   license: string | null;
   licenseType: string;
@@ -68,10 +68,15 @@ export const versionMetaColumns = {
   attributionUrl: versions.attributionUrl,
   languageCode: languages.code,
   textDirection: languages.direction,
+  sourceUrl: versions.sourceUrl,
 };
 
-export function toVersionMeta(row: VersionMeta): VersionMeta {
-  return { ...row, abbreviation: canonicalizeVersionAbbreviation(row.abbreviation) };
+/** A row selected with versionMetaColumns. */
+export type VersionMetaRow = Omit<VersionMeta, "code"> & { sourceUrl: string | null };
+
+export function toVersionMeta(row: VersionMetaRow): VersionMeta {
+  const { sourceUrl, ...rest } = row;
+  return { ...rest, abbreviation: canonicalizeVersionAbbreviation(row.abbreviation), code: versionCode(sourceUrl) };
 }
 
 /**
@@ -79,9 +84,6 @@ export function toVersionMeta(row: VersionMeta): VersionMeta {
  * code each caller asked for. Codes that match nothing are absent.
  */
 export async function loadVersionsWithBooks(codes: string[]): Promise<Map<string, VersionWithBooks>> {
-  const candidatesByCode = new Map(codes.map((code) => [code, getVersionAbbreviationCandidates(code)]));
-  const allCandidates = [...new Set([...candidatesByCode.values()].flat())];
-
   const rows = await db
     .select({
       version: versionMetaColumns,
@@ -97,24 +99,27 @@ export async function loadVersionsWithBooks(codes: string[]): Promise<Map<string
     .from(versions)
     .leftJoin(languages, eq(versions.languageId, languages.id))
     .leftJoin(books, eq(books.versionId, versions.id))
-    .where(inArray(versions.abbreviation, allCandidates))
+    .where(versionParamsWhere(codes))
     .orderBy(asc(books.position));
 
-  const byAbbreviation = new Map<string, VersionWithBooks>();
+  const byId = new Map<string, { key: { abbreviation: string; sourceUrl: string | null }; entry: VersionWithBooks }>();
   for (const row of rows) {
-    let entry = byAbbreviation.get(row.version.abbreviation);
-    if (!entry) {
-      entry = { version: toVersionMeta(row.version), books: [] };
-      byAbbreviation.set(row.version.abbreviation, entry);
+    let found = byId.get(row.version.id);
+    if (!found) {
+      found = {
+        key: { abbreviation: row.version.abbreviation, sourceUrl: row.version.sourceUrl },
+        entry: { version: toVersionMeta(row.version), books: [] },
+      };
+      byId.set(row.version.id, found);
     }
-    if (row.book?.id) entry.books.push(row.book as BookRow);
+    if (row.book?.id) found.entry.books.push(row.book as BookRow);
   }
 
+  const candidates = [...byId.values()];
   const result = new Map<string, VersionWithBooks>();
-  for (const [code, candidates] of candidatesByCode) {
-    // Candidates are ordered canonical-first, so a canonical row wins over a legacy one.
-    const match = candidates.map((c) => byAbbreviation.get(c)).find(Boolean);
-    if (match) result.set(code, match);
+  for (const code of codes) {
+    const match = pickVersion(candidates, code, (c) => c.key);
+    if (match) result.set(code, match.entry);
   }
   return result;
 }

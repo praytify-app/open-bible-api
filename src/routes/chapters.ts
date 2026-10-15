@@ -4,7 +4,7 @@ import { chapters, verses, books, versions, languages } from "../db/schema.js";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
-import { getVersionAbbreviationCandidates } from "../lib/version-abbreviations.js";
+import { pickVersion, versionParamsWhere } from "../lib/version-lookup.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
 import { VerseSchema, ErrorSchema, ChapterMetaSchema } from "../lib/openapi-schemas.js";
@@ -93,7 +93,6 @@ chaptersRouter.openapi(versesByRefRoute, async (c) => {
 
   // Query 1: the version and, via the join condition, its matching book.
   // A version row with a null book means the version exists but lacks it.
-  const candidates = getVersionAbbreviationCandidates(versionAbbr);
   const found = await db
     .select({
       version: versionMetaColumns,
@@ -103,11 +102,9 @@ chaptersRouter.openapi(versesByRefRoute, async (c) => {
     .from(versions)
     .leftJoin(languages, eq(versions.languageId, languages.id))
     .leftJoin(books, and(eq(books.versionId, versions.id), eq(books.bookCode, bookCode)))
-    .where(inArray(versions.abbreviation, candidates));
+    .where(versionParamsWhere([versionAbbr]));
 
-  const match = candidates
-    .map((abbr) => found.find((row) => row.version.abbreviation === abbr))
-    .find(Boolean);
+  const match = pickVersion(found, versionAbbr, (row) => row.version);
 
   if (!match) {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${versionAbbr}' not found`);
@@ -140,6 +137,7 @@ chaptersRouter.openapi(versesByRefRoute, async (c) => {
       data: cleanVerseRows(verseRows),
       meta: {
         version: version.abbreviation,
+        versionCode: version.code,
         versionName: version.name,
         bookCode,
         bookName: match.bookName,

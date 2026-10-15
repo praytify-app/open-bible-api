@@ -19,6 +19,7 @@ const KJV = {
   attributionUrl: "https://ebible.org/find/details.php?id=eng-kjv2006",
   languageCode: "eng",
   textDirection: "ltr",
+  sourceUrl: "https://ebible.org/Scriptures/eng-kjv2006_usfm.zip",
 };
 
 const VERSES = [
@@ -42,6 +43,7 @@ describe("GET /api/v1/chapters/{version}/{bookCode}/{chapter}/verses", () => {
     ]);
     expect(body.meta).toEqual({
       version: "KJV",
+      versionCode: "eng-kjv2006",
       versionName: "King James Version",
       bookCode: "JHN",
       bookName: "John",
@@ -96,5 +98,24 @@ describe("GET /api/v1/chapters/{id}/verses", () => {
     const res = await app.request("/api/v1/chapters/not-a-uuid/verses");
     expect(res.status).toBe(404);
     expect(mock.calls.queries).toBe(0);
+  });
+});
+
+describe("version codes", () => {
+  beforeEach(() => mock.reset());
+
+  it("resolves a chapter by eBible code when the stored abbreviation is a title", async () => {
+    const titled = {
+      ...KJV,
+      abbreviation: "King James Version (1769) with Apocrypha",
+      sourceUrl: "https://ebible.org/Scriptures/eng-kjv2006_usfm.zip",
+    };
+    mock.queue([{ version: titled, bookId: "book-jhn", bookName: "John" }], VERSES);
+
+    const res = await app.request("/api/v1/chapters/eng-kjv2006/JHN/1/verses");
+    expect(res.status).toBe(200);
+    const { meta } = await res.json();
+    expect(meta.version).toBe("King James Version (1769) with Apocrypha");
+    expect(meta.versionCode).toBe("eng-kjv2006");
   });
 });

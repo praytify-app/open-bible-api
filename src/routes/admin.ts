@@ -4,6 +4,7 @@ import { languages, versions, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { adminAuth } from "../middleware/admin-auth.js";
+import { versionCode } from "../lib/version-lookup.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import {
   AdminStatsSchema,
@@ -208,7 +209,7 @@ adminRouter.openapi(createVersionRoute, async (c) => {
     })
     .returning();
 
-  return c.json({ data: newVersion }, 201);
+  return c.json({ data: { ...newVersion, code: versionCode(newVersion.sourceUrl) } }, 201);
 });
 
 adminRouter.openapi(seedRoute, async (c) => {

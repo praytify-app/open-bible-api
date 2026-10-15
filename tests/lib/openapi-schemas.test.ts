@@ -56,6 +56,7 @@ describe("VersionSchema", () => {
   const valid = {
     id: "550e8400-e29b-41d4-a716-446655440000",
     abbreviation: "KJV",
+    code: null,
     name: "King James Version",
     description: null,
     license: "PD",

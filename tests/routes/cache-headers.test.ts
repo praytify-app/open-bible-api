@@ -16,7 +16,7 @@ const BOOK_ROWS = [
 ];
 
 function queueBooks() {
-  mock.queue([{ id: "v1" }], BOOK_ROWS);
+  mock.queue([{ id: "v1", abbreviation: "KJV", sourceUrl: null }], BOOK_ROWS);
 }
 
 describe("HTTP caching", () => {

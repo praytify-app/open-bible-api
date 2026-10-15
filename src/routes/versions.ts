@@ -1,13 +1,11 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db, downloadStatementTimeoutMs } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
-import { eq, count, sql, and, asc, inArray, or, ilike } from "drizzle-orm";
+import { eq, count, sql, and, asc, or, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
-import {
-  canonicalizeVersionAbbreviation,
-  getVersionAbbreviationCandidates,
-} from "../lib/version-abbreviations.js";
+import { canonicalizeVersionAbbreviation } from "../lib/version-abbreviations.js";
+import { pickVersion, versionCode, versionParamsWhere } from "../lib/version-lookup.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import { Bulkhead } from "../lib/bulkhead.js";
 import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
@@ -27,10 +25,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const versionsRouter = new OpenAPIHono();
 versionsRouter.use("*", cacheControl(CachePolicy.scripture));
 
-function mapVersionForResponse<T extends { abbreviation: string }>(version: T): T {
+function mapVersionForResponse<T extends { abbreviation: string; sourceUrl: string | null }>(
+  version: T
+): T & { code: string | null } {
   return {
     ...version,
     abbreviation: canonicalizeVersionAbbreviation(version.abbreviation),
+    code: versionCode(version.sourceUrl),
   };
 }
 
@@ -209,14 +210,11 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
   // add a pg_trgm GIN index on name and abbreviation.
   if (searchFilter) {
     const pattern = `%${searchFilter}%`;
-    const searchCandidates = getVersionAbbreviationCandidates(
-      searchFilter.toUpperCase()
-    );
     conditions.push(
       or(
         ilike(versions.name, pattern),
         ilike(versions.abbreviation, pattern),
-        inArray(versions.abbreviation, searchCandidates)
+        versionParamsWhere([searchFilter.toUpperCase(), searchFilter])
       )!
     );
   }
@@ -294,11 +292,9 @@ versionsRouter.openapi(getVersionRoute, async (c) => {
   }
 
   if (version.length === 0) {
-    version = await db
-      .select()
-      .from(versions)
-      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
-      .limit(1);
+    const rows = await db.select().from(versions).where(versionParamsWhere([id]));
+    const picked = pickVersion(rows, id, (row) => row);
+    version = picked ? [picked] : [];
   }
 
   if (version.length === 0) {
@@ -343,11 +339,12 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
   }
 
   if (version.length === 0) {
-    version = await db
-      .select({ id: versions.id })
+    const rows = await db
+      .select({ id: versions.id, abbreviation: versions.abbreviation, sourceUrl: versions.sourceUrl })
       .from(versions)
-      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
-      .limit(1);
+      .where(versionParamsWhere([id]));
+    const picked = pickVersion(rows, id, (row) => row);
+    version = picked ? [picked] : [];
   }
 
   if (version.length === 0) {
@@ -376,20 +373,13 @@ versionsRouter.openapi(downloadVersionRoute, async (c) => {
 
   // Query 1: the version by UUID or abbreviation, with its language.
   const isUuid = UUID.test(id);
-  const candidates = getVersionAbbreviationCandidates(id);
   const found = await db
-    .select({ ...versionMetaColumns, sourceUrl: versions.sourceUrl })
+    .select(versionMetaColumns)
     .from(versions)
     .leftJoin(languages, eq(versions.languageId, languages.id))
-    .where(
-      isUuid
-        ? or(eq(versions.id, id), inArray(versions.abbreviation, candidates))
-        : inArray(versions.abbreviation, candidates)
-    );
+    .where(isUuid ? or(eq(versions.id, id), versionParamsWhere([id])) : versionParamsWhere([id]));
 
-  const row =
-    found.find((r) => r.id === id) ??
-    candidates.map((abbr) => found.find((r) => r.abbreviation === abbr)).find(Boolean);
+  const row = found.find((r) => r.id === id) ?? pickVersion(found, id, (r) => r);
 
   if (!row) {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
@@ -493,6 +483,7 @@ versionsRouter.openapi(downloadVersionRoute, async (c) => {
           version: {
             id: version.id,
             abbreviation: version.abbreviation,
+            code: version.code,
             name: version.name,
             license: version.license,
             licenseType: version.licenseType,

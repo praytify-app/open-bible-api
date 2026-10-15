@@ -1,13 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 
 const mock = await vi.hoisted(async () => {
   const { createMockDb } = await import("../helpers/mock-db.js");
   return createMockDb();
 });
 
-vi.mock("../../src/db/client.js", () => ({ db: mock.db, queryClient: {} }));
+vi.mock("../../src/db/client.js", () => ({ db: mock.db, queryClient: {}, downloadStatementTimeoutMs: 60_000 }));
 
 import { app } from "../../src/index.js";
+import { downloadSlots } from "../../src/routes/versions.js";
 
 const VERSION_ROW = {
   id: "11111111-2222-4333-8444-555555555555",
@@ -142,5 +145,27 @@ describe("GET /api/v1/versions/{id}/download", () => {
     const res = await app.request("/api/v1/versions/NOPE/download");
     expect(res.status).toBe(404);
     expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+  it("runs the verse query under the longer download statement timeout", async () => {
+    mock.queue([VERSION_ROW], VERSE_ROWS);
+    expect((await app.request("/api/v1/versions/YOR/download")).status).toBe(200);
+    const executed = mock.calls.executedSql.map((q) => new PgDialect().sqlToQuery(q as SQL).sql);
+    expect(executed).toEqual(["SET LOCAL statement_timeout = 60000"]);
+  });
+
+  it("answers 503 with Retry-After, before reading any verses, when every slot and queue place is taken", async () => {
+    const held = Array.from({ length: downloadSlots.limit + downloadSlots.maxWaiting }, () => downloadSlots.acquire());
+    try {
+      mock.queue([VERSION_ROW], VERSE_ROWS);
+      const res = await app.request("/api/v1/versions/YOR/download");
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("10");
+      expect((await res.json()).error.code).toBe("BUSY");
+      expect(mock.calls.queries).toBe(1);
+    } finally {
+      // Releasing in order hands each slot to the next queued holder.
+      for (const pending of held) (await pending)?.();
+    }
+    expect(downloadSlots.stats).toEqual({ active: 0, waiting: 0 });
   });
 });

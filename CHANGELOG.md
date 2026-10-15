@@ -10,6 +10,7 @@
 - Full-Bible download returns `{ version, books: [...] }` (`format=books`, the default); `format=legacy` keeps the old shape.
 - `seed-sample` CLI command: seeds WEB, KJV, and the Arabic Van Dyck, the daily verses, and search indexes for them, offline from `EBIBLE_CACHE_DIR` when cached.
 - `MIGRATE_ON_BOOT`, `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `GATEWAY_TOKEN`; graceful shutdown.
+- `DOWNLOAD_CONCURRENCY` (default 2): full-Bible downloads past it wait their turn, up to 16, then get `503` with `Retry-After`.
 - `Cache-Control` and strong `ETag` on catalog and scripture responses, with `304` for `If-None-Match`.
 - Typed OpenAPI responses; admin routes hidden from the published spec.
 - CI, Renovate, CONTRIBUTING, and SECURITY.
@@ -29,6 +30,7 @@
 - The per-IP limiter never evicted entries and ignored `RATE_LIMIT_MAX`.
 - The migration journal (`drizzle/meta`) was gitignored, so fresh clones could not migrate.
 - Search in one version, and every search on the trigram path, now matches only the requested versions' chapters before ranking. On the full 14.8M-verse corpus, common words took 2 to 46 seconds or hit the 15-second timeout; they now return in under a second once cached.
+- Concurrent full-Bible downloads under load ran past the 15-second statement timeout and failed with `500` (38 to 57% of them in a load test) while slowing chapter reads. Downloads now build two at a time per process with a 60-second budget; none failed in the same test.
 
 ### Security
 

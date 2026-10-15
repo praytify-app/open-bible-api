@@ -1,5 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { db } from "../db/client.js";
+import { db, downloadStatementTimeoutMs } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql, and, asc, inArray, or, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
@@ -9,6 +9,7 @@ import {
   getVersionAbbreviationCandidates,
 } from "../lib/version-abbreviations.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
+import { Bulkhead } from "../lib/bulkhead.js";
 import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
 import {
   VersionSchema,
@@ -120,6 +121,13 @@ const versionBooksRoute = createRoute({
 export const DOWNLOAD_FORMATS = ["books", "legacy"] as const;
 type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number];
 
+const downloadConcurrency = parseInt(process.env.DOWNLOAD_CONCURRENCY ?? "", 10);
+/** Full-Bible downloads built at once per process; the rest queue, up to 16. */
+export const downloadSlots = new Bulkhead(
+  Number.isFinite(downloadConcurrency) && downloadConcurrency >= 1 ? downloadConcurrency : 2,
+  16
+);
+
 const downloadVersionRoute = createRoute({
   method: "get",
   path: "/{id}/download",
@@ -153,6 +161,10 @@ const downloadVersionRoute = createRoute({
     },
     404: {
       description: "Version not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    503: {
+      description: "Too many downloads in progress; retry after the Retry-After seconds",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -383,105 +395,122 @@ versionsRouter.openapi(downloadVersionRoute, async (c) => {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
   }
 
-  // Query 2: every verse in canonical order. This replaces one query per
-  // book and one per chapter (about 1,256 round trips for a full Bible)
-  // that held a pool connection for the whole download.
-  const verseRows = await db
-    .select({
-      bookCode: books.bookCode,
-      bookName: books.name,
-      position: books.position,
-      testament: books.testament,
-      chapter: chapters.number,
-      verse: verses.number,
-      text: verses.text,
-    })
-    .from(books)
-    .innerJoin(chapters, eq(chapters.bookId, books.id))
-    .innerJoin(verses, eq(verses.chapterId, chapters.id))
-    .where(eq(books.versionId, row.id))
-    .orderBy(asc(books.position), asc(chapters.number), asc(verses.number));
+  // Building a full Bible holds this process's only thread for most of a
+  // second. Unbounded, four at once starved chapter reads and pushed the
+  // downloads themselves past the statement timeout (docs/PERFORMANCE.md in
+  // the gateway repo), so extra requests wait their turn or are turned away.
+  const release = await downloadSlots.acquire();
+  if (!release) {
+    c.header("Retry-After", "10");
+    return errorResponse(c, 503, "BUSY", "Too many full-Bible downloads in progress. Retry shortly.");
+  }
 
-  const version = toVersionMeta(row);
+  try {
+    // Query 2: every verse in canonical order. This replaces one query per
+    // book and one per chapter (about 1,256 round trips for a full Bible)
+    // that held a pool connection for the whole download.
+    const verseRows = await db.transaction(async (tx) => {
+      await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${downloadStatementTimeoutMs}`));
+      return tx
+        .select({
+          bookCode: books.bookCode,
+          bookName: books.name,
+          position: books.position,
+          testament: books.testament,
+          chapter: chapters.number,
+          verse: verses.number,
+          text: verses.text,
+        })
+        .from(books)
+        .innerJoin(chapters, eq(chapters.bookId, books.id))
+        .innerJoin(verses, eq(verses.chapterId, chapters.id))
+        .where(eq(books.versionId, row.id))
+        .orderBy(asc(books.position), asc(chapters.number), asc(verses.number));
+    });
 
-  if (format === "legacy") {
-    const nested: Record<string, Record<string, Record<string, string>>> = {};
-    for (const r of verseRows) {
-      const book = (nested[r.bookCode] ??= {});
-      const chapter = (book[String(r.chapter)] ??= {});
-      chapter[String(r.verse)] = cleanVerseText(r.text);
+    const version = toVersionMeta(row);
+
+    if (format === "legacy") {
+      const nested: Record<string, Record<string, Record<string, string>>> = {};
+      for (const r of verseRows) {
+        const book = (nested[r.bookCode] ??= {});
+        const chapter = (book[String(r.chapter)] ??= {});
+        chapter[String(r.verse)] = cleanVerseText(r.text);
+      }
+      // Kept byte-compatible with the old shape, including its attribution rule.
+      const legacyAttribution =
+        row.license && row.license.includes("CC")
+          ? `${row.name}${row.sourceUrl ? ` (${row.sourceUrl})` : ""}`
+          : undefined;
+      return c.json(
+        {
+          data: {
+            version: { abbreviation: version.abbreviation, name: version.name, license: version.license },
+            books: nested,
+            ...(legacyAttribution ? { attribution: legacyAttribution } : {}),
+          },
+        },
+        200
+      );
     }
-    // Kept byte-compatible with the old shape, including its attribution rule.
-    const legacyAttribution =
-      row.license && row.license.includes("CC")
-        ? `${row.name}${row.sourceUrl ? ` (${row.sourceUrl})` : ""}`
-        : undefined;
+
+    type DownloadBook = {
+      bookCode: string;
+      code: string;
+      name: string;
+      position: number;
+      testament: string;
+      chapters: { number: number; verses: { number: number; text: string }[] }[];
+    };
+    const bookList: DownloadBook[] = [];
+    let book: DownloadBook | undefined;
+    let chapter: DownloadBook["chapters"][number] | undefined;
+
+    // Rows arrive ordered, so grouping is a single pass with no lookups.
+    for (const r of verseRows) {
+      if (!book || book.bookCode !== r.bookCode) {
+        book = {
+          bookCode: r.bookCode,
+          code: r.bookCode,
+          name: r.bookName,
+          position: r.position,
+          testament: r.testament,
+          chapters: [],
+        };
+        bookList.push(book);
+        chapter = undefined;
+      }
+      if (!chapter || chapter.number !== r.chapter) {
+        chapter = { number: r.chapter, verses: [] };
+        book.chapters.push(chapter);
+      }
+      chapter.verses.push({ number: r.verse, text: cleanVerseText(r.text) });
+    }
+
     return c.json(
       {
         data: {
-          version: { abbreviation: version.abbreviation, name: version.name, license: version.license },
-          books: nested,
-          ...(legacyAttribution ? { attribution: legacyAttribution } : {}),
+          version: {
+            id: version.id,
+            abbreviation: version.abbreviation,
+            name: version.name,
+            license: version.license,
+            licenseType: version.licenseType,
+            attribution: version.attribution,
+            attributionUrl: version.attributionUrl,
+            languageCode: version.languageCode,
+            textDirection: version.textDirection,
+          },
+          name: version.name,
+          languageCode: version.languageCode,
+          books: bookList,
         },
       },
       200
     );
+  } finally {
+    release();
   }
-
-  type DownloadBook = {
-    bookCode: string;
-    code: string;
-    name: string;
-    position: number;
-    testament: string;
-    chapters: { number: number; verses: { number: number; text: string }[] }[];
-  };
-  const bookList: DownloadBook[] = [];
-  let book: DownloadBook | undefined;
-  let chapter: DownloadBook["chapters"][number] | undefined;
-
-  // Rows arrive ordered, so grouping is a single pass with no lookups.
-  for (const r of verseRows) {
-    if (!book || book.bookCode !== r.bookCode) {
-      book = {
-        bookCode: r.bookCode,
-        code: r.bookCode,
-        name: r.bookName,
-        position: r.position,
-        testament: r.testament,
-        chapters: [],
-      };
-      bookList.push(book);
-      chapter = undefined;
-    }
-    if (!chapter || chapter.number !== r.chapter) {
-      chapter = { number: r.chapter, verses: [] };
-      book.chapters.push(chapter);
-    }
-    chapter.verses.push({ number: r.verse, text: cleanVerseText(r.text) });
-  }
-
-  return c.json(
-    {
-      data: {
-        version: {
-          id: version.id,
-          abbreviation: version.abbreviation,
-          name: version.name,
-          license: version.license,
-          licenseType: version.licenseType,
-          attribution: version.attribution,
-          attributionUrl: version.attributionUrl,
-          languageCode: version.languageCode,
-          textDirection: version.textDirection,
-        },
-        name: version.name,
-        languageCode: version.languageCode,
-        books: bookList,
-      },
-    },
-    200
-  );
 });
 
 export { versionsRouter };

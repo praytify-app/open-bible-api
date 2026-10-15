@@ -228,7 +228,8 @@ curl -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:3100/api
 | `GATEWAY_TOKEN` | (unset) | Shared secret a fronting gateway sends as `X-Gateway-Token`. Matching requests skip the per-IP limiter because the gateway enforces its own quotas. Without it, nothing bypasses |
 | `MIGRATE_ON_BOOT` | `false` | Apply migrations (under a Postgres advisory lock) before listening |
 | `DB_POOL_MAX` | `10` | Postgres connection pool size |
-| `DB_STATEMENT_TIMEOUT_MS` | `15000` | Per-statement timeout; `0` disables. The seed scripts set `0` |
+| `DB_STATEMENT_TIMEOUT_MS` | `15000` | Per-statement timeout; `0` disables. Full-Bible downloads get at least 60 seconds. The seed scripts set `0` |
+| `DOWNLOAD_CONCURRENCY` | `2` | Full-Bible downloads built at once per process. Up to 16 more wait their turn; past that the API answers `503` with `Retry-After` |
 | `ESV_API_TOKEN` | (unset) | Crossway token for the ESV audio route and `seed-esv` |
 | `EBIBLE_CACHE_DIR` | `./.cache/ebible` | Where the seeder caches eBible.org zips and extracted USFM |
 

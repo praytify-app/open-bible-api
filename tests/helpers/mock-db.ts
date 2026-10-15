@@ -37,6 +37,8 @@ export function createMockDb() {
       calls.executedSql.push(query);
       return executeResults.shift() ?? [];
     },
+    // The callback gets this same stand-in, so queued results flow through.
+    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
   };
 
   return {

@@ -7,6 +7,7 @@ import { sql, eq } from "drizzle-orm";
 import { fetchCatalog, filterByLicense } from "./catalog.js";
 import { runBatchImport, createBatchReport, formatElapsed } from "./batch-runner.js";
 import { PACKAGE_VERSION } from "../lib/package-version.js";
+import { auditData } from "./audit.js";
 
 const program = new Command();
 
@@ -367,6 +368,36 @@ program
       }
     } catch (err) {
       console.error("Seed-translation failed:", err);
+      process.exit(1);
+    } finally {
+      await queryClient.end();
+    }
+  });
+
+program
+  .command("audit-data")
+  .description("Report empty chapters and abbreviations that are not URL-safe (read-only)")
+  .option("--json", "Print the full report as JSON")
+  .action(async (opts: { json?: boolean }) => {
+    try {
+      const report = await auditData(db);
+      if (opts.json) {
+        console.log(JSON.stringify(report, null, 2));
+        return;
+      }
+      const { emptyChapters, unsafeAbbreviations, unaddressable } = report;
+      console.log(`Versions: ${report.versions}`);
+      console.log(`\nEmpty chapters: ${emptyChapters.total} in ${emptyChapters.byVersion.length} versions (the API returns 404 for them)`);
+      for (const v of emptyChapters.byVersion.slice(0, 20)) {
+        console.log(`  ${String(v.count).padStart(5)}  ${v.code ?? "(no code)"}  ${v.abbreviation}  e.g. ${v.sample.join(", ")}`);
+      }
+      if (emptyChapters.byVersion.length > 20) console.log(`  ... ${emptyChapters.byVersion.length - 20} more (use --json)`);
+      console.log(`\nAbbreviations that are not short and URL-safe: ${unsafeAbbreviations.length} (link these by code)`);
+      for (const v of unsafeAbbreviations.slice(0, 20)) console.log(`  ${v.code ?? "(no code)"}  ${JSON.stringify(v.abbreviation)}`);
+      if (unsafeAbbreviations.length > 20) console.log(`  ... ${unsafeAbbreviations.length - 20} more (use --json)`);
+      console.log(`\nUnsafe abbreviation and no code (addressable only by id): ${unaddressable.length}`);
+    } catch (err) {
+      console.error("Audit failed:", err);
       process.exit(1);
     } finally {
       await queryClient.end();

@@ -10,6 +10,7 @@
 - Chapter responses carry a top-level `meta` with the translation's licensing and language.
 - The daily verse honours `?version=` and accepts `?date=YYYY-MM-DD` (UTC).
 - Full-Bible download returns `{ version, books: [...] }` (`format=books`, the default); `format=legacy` keeps the old shape.
+- `audit-data` CLI command (read-only): chapters with no verses per version, abbreviations that are not URL-safe with their codes, and versions addressable only by id.
 - `seed-sample` CLI command: seeds WEB, KJV, and the Arabic Van Dyck, the daily verses, and search indexes for them, offline from `EBIBLE_CACHE_DIR` when cached.
 - `MIGRATE_ON_BOOT`, `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `GATEWAY_TOKEN`; graceful shutdown.
 - `DOWNLOAD_CONCURRENCY` (default 2): full-Bible downloads past it wait their turn, up to 16, then get `503` with `Retry-After`.

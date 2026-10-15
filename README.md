@@ -243,8 +243,11 @@ pnpm seed seed-translation spaRV1909    # one translation by eBible id
 pnpm seed seed-language fra             # every eligible translation in a language
 pnpm seed seed-daily                    # (re)seed the 366 curated daily verses
 pnpm seed stats
+pnpm seed audit-data                    # empty chapters, abbreviations to link by code (read-only; --json)
 pnpm search:build                       # then vectorize the new rows
 ```
+
+That eBible id is also the version's `code` in API responses, accepted anywhere an abbreviation is. `audit-data` lists the versions whose abbreviation is a title or carries a slash, so clients should link them by code, and the chapters that imported with no verses.
 
 `seed-translation`, `seed-language`, and `discover` read the live eBible.org catalog, so they need network access. Translation ids are in eBible.org detail URLs: `ebible.org/find/details.php?id=engwebp` is `engwebp`.
 

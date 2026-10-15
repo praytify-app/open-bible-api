@@ -1,11 +1,12 @@
-import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
+import { prepared } from "../db/prepared.js";
 import { db } from "../db/client.js";
 import { books, chapters, languages, verses, versions } from "../db/schema.js";
 import { resolveBook } from "./book-names.js";
 import type { ParsedReference } from "./reference-parser.js";
 import { cleanVerseText } from "./text-cleaner.js";
 import { canonicalizeVersionAbbreviation } from "./version-abbreviations.js";
-import { pickVersion, versionCode, versionParamsWhere } from "./version-lookup.js";
+import { pickVersion, versionCode, versionMatchParams, versionMatchSql } from "./version-lookup.js";
 
 /** Licensing and display facts every scripture payload carries, read from the version row. */
 export interface VersionMeta {
@@ -83,8 +84,10 @@ export function toVersionMeta(row: VersionMetaRow): VersionMeta {
  * Load several versions and their book lists in one query, keyed by the
  * code each caller asked for. Codes that match nothing are absent.
  */
-export async function loadVersionsWithBooks(codes: string[]): Promise<Map<string, VersionWithBooks>> {
-  const rows = await db
+// Every ?ref= lookup and daily verse runs these, so they are prepared once
+// rather than rebuilt per request (see the note in routes/chapters.ts).
+const versionsWithBooksQuery = prepared(() =>
+  db
     .select({
       version: versionMetaColumns,
       book: {
@@ -99,8 +102,36 @@ export async function loadVersionsWithBooks(codes: string[]): Promise<Map<string
     .from(versions)
     .leftJoin(languages, eq(versions.languageId, languages.id))
     .leftJoin(books, eq(books.versionId, versions.id))
-    .where(versionParamsWhere(codes))
-    .orderBy(asc(books.position));
+    .where(versionMatchSql)
+    .orderBy(asc(books.position))
+    .prepare("versions_with_books")
+);
+
+const passageVerseColumns = { id: verses.id, number: verses.number, text: verses.text };
+const chapterOfBook = and(eq(chapters.bookId, sql.placeholder("bookId")), eq(chapters.number, sql.placeholder("chapter")));
+
+const wholeChapterQuery = prepared(() =>
+  db
+    .select(passageVerseColumns)
+    .from(verses)
+    .innerJoin(chapters, eq(verses.chapterId, chapters.id))
+    .where(chapterOfBook)
+    .orderBy(asc(verses.number))
+    .prepare("passage_chapter")
+);
+
+const verseRangeQuery = prepared(() =>
+  db
+    .select(passageVerseColumns)
+    .from(verses)
+    .innerJoin(chapters, eq(verses.chapterId, chapters.id))
+    .where(and(chapterOfBook, gte(verses.number, sql.placeholder("verseStart")), lte(verses.number, sql.placeholder("verseEnd"))))
+    .orderBy(asc(verses.number))
+    .prepare("passage_range")
+);
+
+export async function loadVersionsWithBooks(codes: string[]): Promise<Map<string, VersionWithBooks>> {
+  const rows = await versionsWithBooksQuery().execute(versionMatchParams(codes));
 
   const byId = new Map<string, { key: { abbreviation: string; sourceUrl: string | null }; entry: VersionWithBooks }>();
   for (const row of rows) {
@@ -131,18 +162,10 @@ export async function loadChapterVerses(
   verseStart?: number,
   verseEnd?: number
 ): Promise<PassageVerse[]> {
-  const conditions = [eq(chapters.bookId, bookId), eq(chapters.number, chapter)];
-  if (verseStart !== undefined) {
-    conditions.push(gte(verses.number, verseStart));
-    conditions.push(lte(verses.number, verseEnd ?? verseStart));
-  }
-
-  const rows = await db
-    .select({ id: verses.id, number: verses.number, text: verses.text })
-    .from(verses)
-    .innerJoin(chapters, eq(verses.chapterId, chapters.id))
-    .where(and(...conditions))
-    .orderBy(asc(verses.number));
+  const rows =
+    verseStart === undefined
+      ? await wholeChapterQuery().execute({ bookId, chapter })
+      : await verseRangeQuery().execute({ bookId, chapter, verseStart, verseEnd: verseEnd ?? verseStart });
 
   return rows.map((r) => ({ ...r, text: cleanVerseText(r.text) }));
 }

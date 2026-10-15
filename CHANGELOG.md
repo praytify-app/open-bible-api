@@ -23,6 +23,7 @@
 - The daily verse is chosen by UTC calendar date. Dates from March onwards are unchanged; January and February shift by one day.
 - Search clamps `limit` (1 to 100) and `offset` (0 to 1000), requires 2 to 200 characters, matches `%` and `_` literally, and returns camelCase fields alongside the deprecated snake_case ones.
 - Chapters read in two queries instead of four; the full-Bible download in two instead of about 1,256.
+- The hot read queries (chapter, `?ref=` and daily passages, book lists) are prepared once instead of rebuilt per request. In an in-process benchmark against Postgres, engine CPU per request fell 32 to 56% on those routes (43% overall), with byte-identical responses.
 - Health, the OpenAPI document, and the CLI report the package version.
 - Node 24, pnpm 12, TypeScript 7, and current releases of every dependency. Transitive `nanoid` and `yaml` are floored at patched versions.
 

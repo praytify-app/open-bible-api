@@ -1,11 +1,12 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { prepared } from "../db/prepared.js";
 import { db, downloadStatementTimeoutMs } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql, and, asc, or, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { canonicalizeVersionAbbreviation } from "../lib/version-abbreviations.js";
-import { pickVersion, versionCode, versionParamsWhere } from "../lib/version-lookup.js";
+import { pickVersion, versionCode, versionMatchParams, versionMatchSql, versionParamsWhere } from "../lib/version-lookup.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import { Bulkhead } from "../lib/bulkhead.js";
 import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
@@ -21,6 +22,25 @@ import {
 } from "../lib/openapi-schemas.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The book list is fetched by every reader on every translation switch, so
+// its two queries are prepared once (see the note in routes/chapters.ts).
+const versionKeyQuery = prepared(() =>
+  db
+    .select({ id: versions.id, abbreviation: versions.abbreviation, sourceUrl: versions.sourceUrl })
+    .from(versions)
+    .where(versionMatchSql)
+    .prepare("version_key")
+);
+
+const versionBooksQuery = prepared(() =>
+  db
+    .select()
+    .from(books)
+    .where(eq(books.versionId, sql.placeholder("versionId")))
+    .orderBy(books.position)
+    .prepare("version_books")
+);
 
 const versionsRouter = new OpenAPIHono();
 versionsRouter.use("*", cacheControl(CachePolicy.scripture));
@@ -339,10 +359,7 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
   }
 
   if (version.length === 0) {
-    const rows = await db
-      .select({ id: versions.id, abbreviation: versions.abbreviation, sourceUrl: versions.sourceUrl })
-      .from(versions)
-      .where(versionParamsWhere([id]));
+    const rows = await versionKeyQuery().execute(versionMatchParams([id]));
     const picked = pickVersion(rows, id, (row) => row);
     version = picked ? [picked] : [];
   }
@@ -353,11 +370,7 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
 
   const versionId = version[0].id;
 
-  const bookRows = await db
-    .select()
-    .from(books)
-    .where(eq(books.versionId, versionId))
-    .orderBy(books.position);
+  const bookRows = await versionBooksQuery().execute({ versionId });
 
   return success(c, bookRows);
 });

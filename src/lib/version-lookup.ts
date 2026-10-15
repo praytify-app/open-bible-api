@@ -35,15 +35,29 @@ function abbreviationCandidates(param: string): string[] {
 
 const lowered = (values: string[]) => [...new Set(values.map((v) => v.toLowerCase()))];
 
+/** The lower-cased abbreviations and source URLs that versions named by these params may have. */
+export function versionMatchParams(params: string[]): { versionAbbrs: string[]; versionUrls: string[] } {
+  return {
+    versionAbbrs: lowered(params.flatMap(abbreviationCandidates)),
+    versionUrls: lowered(params.map(sourceUrlForCode).filter((url): url is string => url !== null)),
+  };
+}
+
 /** Match versions named by any of these params, by abbreviation (canonical or legacy) or code, ignoring case. */
 export function versionParamsWhere(params: string[]): SQL {
-  const abbreviations = lowered(params.flatMap(abbreviationCandidates));
-  const sourceUrls = lowered(params.map(sourceUrlForCode).filter((url): url is string => url !== null));
-  const byAbbreviation = inArray(sql`lower(${versions.abbreviation})`, abbreviations);
-  return sourceUrls.length
-    ? (or(byAbbreviation, inArray(sql`lower(${versions.sourceUrl})`, sourceUrls)) as SQL)
+  const { versionAbbrs, versionUrls } = versionMatchParams(params);
+  const byAbbreviation = inArray(sql`lower(${versions.abbreviation})`, versionAbbrs);
+  return versionUrls.length
+    ? (or(byAbbreviation, inArray(sql`lower(${versions.sourceUrl})`, versionUrls)) as SQL)
     : byAbbreviation;
 }
+
+/**
+ * versionParamsWhere for prepared statements, which need one SQL shape for
+ * any number of params: bind `versionMatchParams(params)`. An empty array
+ * matches nothing.
+ */
+export const versionMatchSql = sql`(lower(${versions.abbreviation}) = any(${sql.placeholder("versionAbbrs")}::text[]) or lower(${versions.sourceUrl}) = any(${sql.placeholder("versionUrls")}::text[]))`;
 
 export interface VersionKey {
   abbreviation: string;

@@ -1,10 +1,11 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { prepared } from "../db/prepared.js";
 import { db } from "../db/client.js";
 import { chapters, verses, books, versions, languages } from "../db/schema.js";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
-import { pickVersion, versionParamsWhere } from "../lib/version-lookup.js";
+import { pickVersion, versionMatchParams, versionMatchSql } from "../lib/version-lookup.js";
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
 import { VerseSchema, ErrorSchema, ChapterMetaSchema } from "../lib/openapi-schemas.js";
@@ -14,6 +15,34 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function cleanVerseRows(rows: { id: number; chapterId: string; number: number; text: string }[]) {
   return rows.map((r) => ({ ...r, text: cleanVerseText(r.text) }));
 }
+
+// The chapter read is the hottest cold path. Building its SQL on every
+// request was most of drizzle's ~24% share of engine CPU on reads, so both
+// queries are prepared once.
+
+// Query 1: the version and, via the join condition, its matching book.
+// A version row with a null book means the version exists but lacks it.
+const chapterVersionQuery = prepared(() =>
+  db
+    .select({ version: versionMetaColumns, bookId: books.id, bookName: books.name })
+    .from(versions)
+    .leftJoin(languages, eq(versions.languageId, languages.id))
+    .leftJoin(books, and(eq(books.versionId, versions.id), eq(books.bookCode, sql.placeholder("bookCode"))))
+    .where(versionMatchSql)
+    .prepare("chapter_version")
+);
+
+// Query 2: the chapter's verses through the (book_id, number) and
+// (chapter_id, number) unique indexes.
+const chapterVersesQuery = prepared(() =>
+  db
+    .select({ id: verses.id, chapterId: verses.chapterId, number: verses.number, text: verses.text })
+    .from(verses)
+    .innerJoin(chapters, eq(verses.chapterId, chapters.id))
+    .where(and(eq(chapters.bookId, sql.placeholder("bookId")), eq(chapters.number, sql.placeholder("chapter"))))
+    .orderBy(asc(verses.number))
+    .prepare("chapter_verses")
+);
 
 const chaptersRouter = new OpenAPIHono();
 chaptersRouter.use("*", cacheControl(CachePolicy.scripture));
@@ -91,18 +120,7 @@ chaptersRouter.openapi(versesByRefRoute, async (c) => {
     return errorResponse(c, 400, "BAD_REQUEST", "Chapter must be a positive number");
   }
 
-  // Query 1: the version and, via the join condition, its matching book.
-  // A version row with a null book means the version exists but lacks it.
-  const found = await db
-    .select({
-      version: versionMetaColumns,
-      bookId: books.id,
-      bookName: books.name,
-    })
-    .from(versions)
-    .leftJoin(languages, eq(versions.languageId, languages.id))
-    .leftJoin(books, and(eq(books.versionId, versions.id), eq(books.bookCode, bookCode)))
-    .where(versionParamsWhere([versionAbbr]));
+  const found = await chapterVersionQuery().execute({ bookCode, ...versionMatchParams([versionAbbr]) });
 
   const match = pickVersion(found, versionAbbr, (row) => row.version);
 
@@ -113,19 +131,7 @@ chaptersRouter.openapi(versesByRefRoute, async (c) => {
     return errorResponse(c, 404, "NOT_FOUND", `Book '${bookCode}' not found in ${versionAbbr}`);
   }
 
-  // Query 2: the chapter's verses through the (book_id, number) and
-  // (chapter_id, number) unique indexes.
-  const verseRows = await db
-    .select({
-      id: verses.id,
-      chapterId: verses.chapterId,
-      number: verses.number,
-      text: verses.text,
-    })
-    .from(verses)
-    .innerJoin(chapters, eq(verses.chapterId, chapters.id))
-    .where(and(eq(chapters.bookId, match.bookId), eq(chapters.number, chapterNum)))
-    .orderBy(asc(verses.number));
+  const verseRows = await chapterVersesQuery().execute({ bookId: match.bookId, chapter: chapterNum });
 
   if (verseRows.length === 0) {
     return errorResponse(c, 404, "NOT_FOUND", `Chapter ${chapterNum} not found in ${bookCode}`);

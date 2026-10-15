@@ -28,6 +28,7 @@
 - The reference parser could block the event loop for over a second on hostile input; it is now linear time.
 - The per-IP limiter never evicted entries and ignored `RATE_LIMIT_MAX`.
 - The migration journal (`drizzle/meta`) was gitignored, so fresh clones could not migrate.
+- Search in one version, and every search on the trigram path, now matches only the requested versions' chapters before ranking. On the full 14.8M-verse corpus, common words took 2 to 46 seconds or hit the 15-second timeout; they now return in under a second once cached.
 
 ### Security
 

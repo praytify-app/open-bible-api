@@ -10,7 +10,7 @@ const mock = await vi.hoisted(async () => {
 vi.mock("../../src/db/client.js", () => ({ db: mock.db, queryClient: {} }));
 
 import { app } from "../../src/index.js";
-import { clampSearchPaging, escapeLikePattern } from "../../src/routes/search.js";
+import { buildSearchQuery, clampSearchPaging, escapeLikePattern } from "../../src/routes/search.js";
 
 const dialect = new PgDialect();
 const lastQuery = () => dialect.sqlToQuery(mock.calls.executedSql.at(-1) as SQL);
@@ -143,5 +143,43 @@ describe("GET /api/v1/search", () => {
     expect((await app.request("/api/v1/search?q=love&version=NOPE")).status).toBe(404);
     mock.queue([]);
     expect((await app.request("/api/v1/search?q=love&language=zzz")).status).toBe(404);
+  });
+});
+
+describe("buildSearchQuery", () => {
+  const render = (dictName: string, versionIds: string[]) =>
+    dialect.sqlToQuery(buildSearchQuery({ dictName, versionIds, q: "love", limit: 20, offset: 40 }));
+  // The scope-first shape gathers the scope's chapter ids before matching.
+  const scopeFirst = /chapter_id = ANY \(ARRAY\(/;
+
+  it("matches inside one version's chapters before ranking", () => {
+    const { sql, params } = render("english", ["v1"]);
+    expect(sql).toMatch(scopeFirst);
+    expect(sql).toContain("plainto_tsquery");
+    expect(params.slice(-2)).toEqual([20, 40]);
+  });
+
+  it("keeps the trigram path scoped whatever the number of versions", () => {
+    const { sql, params } = render("simple", ["v1", "v2", "v3"]);
+    expect(sql).toMatch(scopeFirst);
+    expect(sql).toContain("ILIKE");
+    expect(params).toContain("{v1,v2,v3}");
+    expect(params.slice(-2)).toEqual([20, 40]);
+  });
+
+  it("starts from the stemmed index for a language with several versions", () => {
+    const { sql, params } = render("english", ["v1", "v2"]);
+    expect(sql).not.toMatch(scopeFirst);
+    expect(sql).toContain("b.version_id = ANY(");
+    expect(params).toContain("{v1,v2}");
+    expect(params.slice(-2)).toEqual([20, 40]);
+  });
+
+  it("orders by rank then verse id in every shape, so pages stay stable", () => {
+    for (const [dict, ids] of [["english", ["v1"]], ["simple", ["v1", "v2"]], ["english", ["v1", "v2"]]] as const) {
+      const { sql } = render(dict, [...ids]);
+      expect(sql).toContain("ORDER BY rank DESC, v.id");
+      if (scopeFirst.test(sql)) expect(sql.trim()).toMatch(/ORDER BY m\.rank DESC, m\.id$/);
+    }
   });
 });

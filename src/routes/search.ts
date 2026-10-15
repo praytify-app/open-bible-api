@@ -1,7 +1,7 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { languages, versions } from "../db/schema.js";
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { getPgDictionary } from "../lib/pg-dictionaries.js";
@@ -131,6 +131,83 @@ async function resolveScope(
   };
 }
 
+export interface SearchQueryInput {
+  dictName: string;
+  versionIds: string[];
+  q: string;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * The search statement. Two shapes return the same rows in the same order;
+ * they differ in which index Postgres starts from.
+ *
+ * Scope first: the scope's chapter ids are collected once, then only verses
+ * in those chapters are matched and ranked. Cost grows with the scope (about
+ * 31,000 verses per version), so it is bounded whatever the query.
+ *
+ * Index first: a plain join filtered by version. The planner starts from the
+ * GIN index, so cost grows with matches across the whole catalog, or it
+ * repeats the GIN scan once per chapter in a nested loop.
+ *
+ * Measured on the full 14.8M-verse corpus (docs/PERFORMANCE.md in the
+ * gateway repo): index first took "lord" in KJV from 2 s to 12 s as more
+ * versions were vectorized, common words on the trigram path from 4 s to the
+ * 15 s timeout, and a two-character Chinese query across six versions 40 s.
+ * Scope first answered the same queries in 0.05 to 0.7 s with a warm cache,
+ * and at most 3.7 s cold. Index first still wins for stemmed search across a
+ * language's several versions, so it is kept for that case alone.
+ */
+export function buildSearchQuery({ dictName, versionIds, q, limit, offset }: SearchQueryInput): SQL {
+  const ids = `{${versionIds.join(",")}}`;
+  const stemmed = dictName !== "simple";
+  const match = stemmed
+    ? sql`v.search_vector @@ plainto_tsquery(${dictName}::regconfig, ${q})`
+    : sql`v.text ILIKE ${"%" + escapeLikePattern(q) + "%"} ESCAPE '\\'`;
+  const rank = stemmed
+    ? sql`ts_rank(v.search_vector, plainto_tsquery(${dictName}::regconfig, ${q}))`
+    : sql`similarity(v.text, ${q})`;
+
+  // v.id breaks rank ties so offset pagination is stable between pages.
+  if (stemmed && versionIds.length > 1) {
+    return sql`
+      SELECT v.id, v.number AS verse_number, v.text, c.number AS chapter_number,
+        b.name AS book_name, b.book_code, ver.abbreviation AS version_abbreviation,
+        ver.license, ver.attribution, ver.attribution_url, ${rank} AS rank
+      FROM verses v
+      JOIN chapters c ON v.chapter_id = c.id
+      JOIN books b ON c.book_id = b.id
+      JOIN versions ver ON b.version_id = ver.id
+      WHERE b.version_id = ANY(${ids}::uuid[]) AND ${match}
+      ORDER BY rank DESC, v.id
+      LIMIT ${limit} OFFSET ${offset}
+    `;
+  }
+
+  // Every verse has exactly one chapter, book, and version, so joining after
+  // the LIMIT returns the same rows as joining before it.
+  return sql`
+    SELECT m.id, m.number AS verse_number, m.text, c.number AS chapter_number,
+      b.name AS book_name, b.book_code, ver.abbreviation AS version_abbreviation,
+      ver.license, ver.attribution, ver.attribution_url, m.rank
+    FROM (
+      SELECT v.id, v.number, v.text, v.chapter_id, ${rank} AS rank
+      FROM verses v
+      WHERE v.chapter_id = ANY (ARRAY(
+          SELECT c.id FROM chapters c JOIN books b ON c.book_id = b.id
+          WHERE b.version_id = ANY(${ids}::uuid[])))
+        AND ${match}
+      ORDER BY rank DESC, v.id
+      LIMIT ${limit} OFFSET ${offset}
+    ) m
+    JOIN chapters c ON c.id = m.chapter_id
+    JOIN books b ON b.id = c.book_id
+    JOIN versions ver ON ver.id = b.version_id
+    ORDER BY m.rank DESC, m.id
+  `;
+}
+
 searchRouter.openapi(searchRoute, async (c) => {
   const q = c.req.query("q")?.trim();
   const versionParam = c.req.query("version")?.trim() || undefined;
@@ -170,45 +247,15 @@ searchRouter.openapi(searchRoute, async (c) => {
     return success(c, []);
   }
 
-  const dictName = getPgDictionary(scope.languageCode ?? "");
-  const versionIds = `{${scope.versionIds.join(",")}}`;
-  const columns = sql`
-    v.id,
-    v.number AS verse_number,
-    v.text,
-    c.number AS chapter_number,
-    b.name AS book_name,
-    b.book_code,
-    ver.abbreviation AS version_abbreviation,
-    ver.license,
-    ver.attribution,
-    ver.attribution_url`;
-  const joins = sql`
-    FROM verses v
-    JOIN chapters c ON v.chapter_id = c.id
-    JOIN books b ON c.book_id = b.id
-    JOIN versions ver ON b.version_id = ver.id`;
-
-  // v.id breaks rank ties so offset pagination is stable between pages.
-  const rows = (dictName !== "simple"
-    ? await db.execute(sql`
-        SELECT ${columns},
-          ts_rank(v.search_vector, plainto_tsquery(${dictName}::regconfig, ${q})) AS rank
-        ${joins}
-        WHERE b.version_id = ANY(${versionIds}::uuid[])
-          AND v.search_vector @@ plainto_tsquery(${dictName}::regconfig, ${q})
-        ORDER BY rank DESC, v.id
-        LIMIT ${limit} OFFSET ${offset}
-      `)
-    : await db.execute(sql`
-        SELECT ${columns},
-          similarity(v.text, ${q}) AS rank
-        ${joins}
-        WHERE b.version_id = ANY(${versionIds}::uuid[])
-          AND v.text ILIKE ${"%" + escapeLikePattern(q) + "%"} ESCAPE '\\'
-        ORDER BY rank DESC, v.id
-        LIMIT ${limit} OFFSET ${offset}
-      `)) as unknown as SearchRow[];
+  const rows = (await db.execute(
+    buildSearchQuery({
+      dictName: getPgDictionary(scope.languageCode ?? ""),
+      versionIds: scope.versionIds,
+      q,
+      limit,
+      offset,
+    })
+  )) as unknown as SearchRow[];
 
   return success(
     c,

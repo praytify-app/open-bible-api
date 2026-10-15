@@ -8,6 +8,8 @@
 ##   ESV_API_TOKEN  — Crossway ESV API token (https://api.esv.org/)
 ## Optional:
 ##   OPEN_BIBLE_API_IMAGE — Override image tag for a rollout
+##   GATEWAY_TOKEN        — Shared secret from the Praytify gateway; its requests skip the per-IP limiter
+##   RATE_LIMIT_MAX       — Requests per hour per client IP for direct traffic (default 1000)
 
 services:
   api:
@@ -20,7 +22,8 @@ services:
       - HOST=0.0.0.0
       - ADMIN_TOKEN=${ADMIN_TOKEN}
       - CORS_ORIGINS=${CORS_ORIGINS:-https://praytify.app}
-      - RATE_LIMIT=${RATE_LIMIT:-100}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-1000}
+      - GATEWAY_TOKEN=${GATEWAY_TOKEN:-}
       - ESV_API_TOKEN=${ESV_API_TOKEN}
     labels:
       - traefik.enable=true
@@ -29,7 +32,7 @@ services:
       - traefik.http.routers.bible-api.tls.certresolver=letsencrypt
       - traefik.http.services.bible-api.loadbalancer.server.port=3100
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3100/health').then(r=>{if(!r.ok)process.exit(1)})"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3100/api/v1/health').then(r=>{if(!r.ok)process.exit(1)})"]
       interval: 30s
       timeout: 5s
       retries: 3

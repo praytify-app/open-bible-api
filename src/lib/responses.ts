@@ -14,7 +14,7 @@ export function success<T>(c: Context, data: T, meta?: PaginationMeta) {
   }, 200 as const);
 }
 
-export function errorResponse<S extends 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500>(
+export function errorResponse<S extends 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 503>(
   c: Context,
   status: S,
   code: string,

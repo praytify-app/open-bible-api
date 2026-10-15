@@ -52,4 +52,21 @@ describe("adminAuth", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
   });
+
+  it("rejects a token that is a prefix of the real one (401)", async () => {
+    const app = createApp();
+    const res = await app.request("/admin", {
+      headers: { Authorization: `Bearer ${TEST_TOKEN.slice(0, 8)}` },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("locks the admin surface when ADMIN_TOKEN is unset (401)", async () => {
+    vi.stubEnv("ADMIN_TOKEN", "");
+    const app = createApp();
+    const res = await app.request("/admin", {
+      headers: { Authorization: "Bearer " },
+    });
+    expect(res.status).toBe(401);
+  });
 });

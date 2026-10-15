@@ -1,31 +1,57 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { db } from "../db/client.js";
+import { prepared } from "../db/prepared.js";
+import { db, downloadStatementTimeoutMs } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
-import { eq, count, sql, and, inArray, or, ilike } from "drizzle-orm";
+import { eq, count, sql, and, asc, or, ilike } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
-import { cacheControl } from "../middleware/cache.js";
-import {
-  canonicalizeVersionAbbreviation,
-  getVersionAbbreviationCandidates,
-} from "../lib/version-abbreviations.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
+import { canonicalizeVersionAbbreviation } from "../lib/version-abbreviations.js";
+import { pickVersion, versionCode, versionMatchParams, versionMatchSql, versionParamsWhere } from "../lib/version-lookup.js";
+import { cleanVerseText } from "../lib/text-cleaner.js";
+import { Bulkhead } from "../lib/bulkhead.js";
+import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
 import {
   VersionSchema,
   BookSchema,
   PaginationQuerySchema,
   ErrorSchema,
   PaginationMetaSchema,
+  DownloadBooksSchema,
+  DownloadLegacySchema,
+  VersionListItemSchema,
 } from "../lib/openapi-schemas.js";
 
-const TWENTY_FOUR_HOURS = 86400;
-const SEVEN_DAYS = 604800;
-const THIRTY_DAYS = 2592000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// The book list is fetched by every reader on every translation switch, so
+// its two queries are prepared once (see the note in routes/chapters.ts).
+const versionKeyQuery = prepared(() =>
+  db
+    .select({ id: versions.id, abbreviation: versions.abbreviation, sourceUrl: versions.sourceUrl })
+    .from(versions)
+    .where(versionMatchSql)
+    .prepare("version_key")
+);
+
+const versionBooksQuery = prepared(() =>
+  db
+    .select()
+    .from(books)
+    .where(eq(books.versionId, sql.placeholder("versionId")))
+    .orderBy(books.position)
+    .prepare("version_books")
+);
 
 const versionsRouter = new OpenAPIHono();
+versionsRouter.use("*", cacheControl(CachePolicy.scripture));
 
-function mapVersionForResponse<T extends { abbreviation: string }>(version: T): T {
+function mapVersionForResponse<T extends { abbreviation: string; sourceUrl: string | null }>(
+  version: T
+): T & { code: string | null } {
   return {
     ...version,
     abbreviation: canonicalizeVersionAbbreviation(version.abbreviation),
+    code: versionCode(version.sourceUrl),
   };
 }
 
@@ -50,7 +76,7 @@ const listVersionsRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            data: z.array(z.any()),
+            data: z.array(VersionListItemSchema),
             meta: PaginationMetaSchema.optional(),
           }),
         },
@@ -113,38 +139,53 @@ const versionBooksRoute = createRoute({
   },
 });
 
+export const DOWNLOAD_FORMATS = ["books", "legacy"] as const;
+type DownloadFormat = (typeof DOWNLOAD_FORMATS)[number];
+
+const downloadConcurrency = parseInt(process.env.DOWNLOAD_CONCURRENCY ?? "", 10);
+/** Full-Bible downloads built at once per process; the rest queue, up to 16. */
+export const downloadSlots = new Bulkhead(
+  Number.isFinite(downloadConcurrency) && downloadConcurrency >= 1 ? downloadConcurrency : 2,
+  16
+);
+
 const downloadVersionRoute = createRoute({
   method: "get",
   path: "/{id}/download",
   tags: ["Versions"],
-  summary: "Download full Bible as JSON",
-  description: "Returns the entire Bible text for a version as a structured JSON object.",
+  summary: "Download a full Bible as JSON",
+  description:
+    "The entire text of one version in a single response. `format=books` (default) returns an ordered array of " +
+    "books, each with its chapters and verses, plus the version's license and attribution. `format=legacy` " +
+    "returns the earlier nested-object shape and is deprecated.",
   request: {
     params: z.object({
-      id: z.string().openapi({ description: "Version UUID" }),
+      id: z.string().openapi({ description: "Version UUID or abbreviation", example: "WEB" }),
+    }),
+    query: z.object({
+      // Validated in the handler so a bad value gets the standard error envelope.
+      format: z.string().optional().openapi({ description: "Response shape: books (default) or legacy (deprecated)", example: "books" }),
     }),
   },
   responses: {
     200: {
-      description: "Full Bible data",
+      description: "Full Bible text",
       content: {
         "application/json": {
-          schema: z.object({
-            data: z.object({
-              version: z.object({
-                abbreviation: z.string(),
-                name: z.string(),
-                license: z.string().nullable(),
-              }),
-              books: z.record(z.string(), z.record(z.string(), z.record(z.string(), z.string()))),
-              attribution: z.string().optional(),
-            }),
-          }),
+          schema: z.object({ data: z.union([DownloadBooksSchema, DownloadLegacySchema]) }),
         },
       },
     },
+    400: {
+      description: "Unknown format",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
     404: {
       description: "Version not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    503: {
+      description: "Too many downloads in progress; retry after the Retry-After seconds",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -189,14 +230,11 @@ versionsRouter.openapi(listVersionsRoute, async (c) => {
   // add a pg_trgm GIN index on name and abbreviation.
   if (searchFilter) {
     const pattern = `%${searchFilter}%`;
-    const searchCandidates = getVersionAbbreviationCandidates(
-      searchFilter.toUpperCase()
-    );
     conditions.push(
       or(
         ilike(versions.name, pattern),
         ilike(versions.abbreviation, pattern),
-        inArray(versions.abbreviation, searchCandidates)
+        versionParamsWhere([searchFilter.toUpperCase(), searchFilter])
       )!
     );
   }
@@ -274,11 +312,9 @@ versionsRouter.openapi(getVersionRoute, async (c) => {
   }
 
   if (version.length === 0) {
-    version = await db
-      .select()
-      .from(versions)
-      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
-      .limit(1);
+    const rows = await db.select().from(versions).where(versionParamsWhere([id]));
+    const picked = pickVersion(rows, id, (row) => row);
+    version = picked ? [picked] : [];
   }
 
   if (version.length === 0) {
@@ -323,11 +359,9 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
   }
 
   if (version.length === 0) {
-    version = await db
-      .select({ id: versions.id })
-      .from(versions)
-      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
-      .limit(1);
+    const rows = await versionKeyQuery().execute(versionMatchParams([id]));
+    const picked = pickVersion(rows, id, (row) => row);
+    version = picked ? [picked] : [];
   }
 
   if (version.length === 0) {
@@ -336,93 +370,151 @@ versionsRouter.openapi(versionBooksRoute, async (c) => {
 
   const versionId = version[0].id;
 
-  const bookRows = await db
-    .select()
-    .from(books)
-    .where(eq(books.versionId, versionId))
-    .orderBy(books.position);
+  const bookRows = await versionBooksQuery().execute({ versionId });
 
   return success(c, bookRows);
 });
 
-versionsRouter.openapi(downloadVersionRoute, async (c): Promise<any> => {
+versionsRouter.openapi(downloadVersionRoute, async (c) => {
   const id = c.req.param("id");
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const formatParam = c.req.query("format") ?? "books";
 
-  let version = [] as typeof versions.$inferSelect[];
-
-  if (isUuid) {
-    version = await db
-      .select()
-      .from(versions)
-      .where(eq(versions.id, id))
-      .limit(1);
+  if (!DOWNLOAD_FORMATS.includes(formatParam as DownloadFormat)) {
+    return errorResponse(c, 400, "BAD_REQUEST", `Unknown format '${formatParam}'. Use one of: ${DOWNLOAD_FORMATS.join(", ")}`);
   }
+  const format = formatParam as DownloadFormat;
 
-  if (version.length === 0) {
-    version = await db
-      .select()
-      .from(versions)
-      .where(inArray(versions.abbreviation, getVersionAbbreviationCandidates(id)))
-      .limit(1);
-  }
+  // Query 1: the version by UUID or abbreviation, with its language.
+  const isUuid = UUID.test(id);
+  const found = await db
+    .select(versionMetaColumns)
+    .from(versions)
+    .leftJoin(languages, eq(versions.languageId, languages.id))
+    .where(isUuid ? or(eq(versions.id, id), versionParamsWhere([id])) : versionParamsWhere([id]));
 
-  if (version.length === 0) {
+  const row = found.find((r) => r.id === id) ?? pickVersion(found, id, (r) => r);
+
+  if (!row) {
     return errorResponse(c, 404, "NOT_FOUND", `Version '${id}' not found`);
   }
 
-  const ver = version[0];
+  // Building a full Bible holds this process's only thread for most of a
+  // second. Unbounded, four at once starved chapter reads and pushed the
+  // downloads themselves past the statement timeout (docs/PERFORMANCE.md in
+  // the gateway repo), so extra requests wait their turn or are turned away.
+  const release = await downloadSlots.acquire();
+  if (!release) {
+    c.header("Retry-After", "10");
+    return errorResponse(c, 503, "BUSY", "Too many full-Bible downloads in progress. Retry shortly.");
+  }
 
-  const allBooks = await db
-    .select()
-    .from(books)
-    .where(eq(books.versionId, ver.id))
-    .orderBy(books.position);
+  try {
+    // Query 2: every verse in canonical order. This replaces one query per
+    // book and one per chapter (about 1,256 round trips for a full Bible)
+    // that held a pool connection for the whole download.
+    const verseRows = await db.transaction(async (tx) => {
+      await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${downloadStatementTimeoutMs}`));
+      return tx
+        .select({
+          bookCode: books.bookCode,
+          bookName: books.name,
+          position: books.position,
+          testament: books.testament,
+          chapter: chapters.number,
+          verse: verses.number,
+          text: verses.text,
+        })
+        .from(books)
+        .innerJoin(chapters, eq(chapters.bookId, books.id))
+        .innerJoin(verses, eq(verses.chapterId, chapters.id))
+        .where(eq(books.versionId, row.id))
+        .orderBy(asc(books.position), asc(chapters.number), asc(verses.number));
+    });
 
-  const result: Record<string, Record<string, Record<string, string>>> = {};
+    const version = toVersionMeta(row);
 
-  for (const book of allBooks) {
-    const bookChapters = await db
-      .select()
-      .from(chapters)
-      .where(eq(chapters.bookId, book.id))
-      .orderBy(chapters.number);
-
-    const chaptersObj: Record<string, Record<string, string>> = {};
-
-    for (const chapter of bookChapters) {
-      const chapterVerses = await db
-        .select()
-        .from(verses)
-        .where(eq(verses.chapterId, chapter.id))
-        .orderBy(verses.number);
-
-      const versesObj: Record<string, string> = {};
-      for (const verse of chapterVerses) {
-        versesObj[String(verse.number)] = verse.text;
+    if (format === "legacy") {
+      const nested: Record<string, Record<string, Record<string, string>>> = {};
+      for (const r of verseRows) {
+        const book = (nested[r.bookCode] ??= {});
+        const chapter = (book[String(r.chapter)] ??= {});
+        chapter[String(r.verse)] = cleanVerseText(r.text);
       }
-
-      chaptersObj[String(chapter.number)] = versesObj;
+      // Kept byte-compatible with the old shape, including its attribution rule.
+      const legacyAttribution =
+        row.license && row.license.includes("CC")
+          ? `${row.name}${row.sourceUrl ? ` (${row.sourceUrl})` : ""}`
+          : undefined;
+      return c.json(
+        {
+          data: {
+            version: { abbreviation: version.abbreviation, name: version.name, license: version.license },
+            books: nested,
+            ...(legacyAttribution ? { attribution: legacyAttribution } : {}),
+          },
+        },
+        200
+      );
     }
 
-    result[book.bookCode] = chaptersObj;
+    type DownloadBook = {
+      bookCode: string;
+      code: string;
+      name: string;
+      position: number;
+      testament: string;
+      chapters: { number: number; verses: { number: number; text: string }[] }[];
+    };
+    const bookList: DownloadBook[] = [];
+    let book: DownloadBook | undefined;
+    let chapter: DownloadBook["chapters"][number] | undefined;
+
+    // Rows arrive ordered, so grouping is a single pass with no lookups.
+    for (const r of verseRows) {
+      if (!book || book.bookCode !== r.bookCode) {
+        book = {
+          bookCode: r.bookCode,
+          code: r.bookCode,
+          name: r.bookName,
+          position: r.position,
+          testament: r.testament,
+          chapters: [],
+        };
+        bookList.push(book);
+        chapter = undefined;
+      }
+      if (!chapter || chapter.number !== r.chapter) {
+        chapter = { number: r.chapter, verses: [] };
+        book.chapters.push(chapter);
+      }
+      chapter.verses.push({ number: r.verse, text: cleanVerseText(r.text) });
+    }
+
+    return c.json(
+      {
+        data: {
+          version: {
+            id: version.id,
+            abbreviation: version.abbreviation,
+            code: version.code,
+            name: version.name,
+            license: version.license,
+            licenseType: version.licenseType,
+            attribution: version.attribution,
+            attributionUrl: version.attributionUrl,
+            languageCode: version.languageCode,
+            textDirection: version.textDirection,
+          },
+          name: version.name,
+          languageCode: version.languageCode,
+          books: bookList,
+        },
+      },
+      200
+    );
+  } finally {
+    release();
   }
-
-  const response: Record<string, unknown> = {
-    version: {
-      abbreviation: canonicalizeVersionAbbreviation(ver.abbreviation),
-      name: ver.name,
-      license: ver.license,
-    },
-    books: result,
-  };
-
-  // Include attribution for CC-licensed versions
-  if (ver.license && ver.license.includes("CC")) {
-    response.attribution = `${ver.name}${ver.sourceUrl ? ` (${ver.sourceUrl})` : ""}`;
-  }
-
-  return c.json({ data: response });
 });
 
 export { versionsRouter };

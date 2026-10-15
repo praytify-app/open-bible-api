@@ -15,7 +15,11 @@ export const LanguageSchema = z.object({
 
 export const VersionSchema = z.object({
   id: z.string().uuid().openapi({ description: "Unique version identifier" }),
-  abbreviation: z.string().max(20).openapi({ description: "Short abbreviation", example: "KJV" }),
+  abbreviation: z.string().max(100).openapi({ description: "Short abbreviation", example: "KJV" }),
+  code: z
+    .string()
+    .nullable()
+    .openapi({ description: "Stable URL-safe code (the eBible translation id), accepted wherever an abbreviation is. Prefer it in URLs: imported abbreviations can contain spaces or slashes. Null for versions from other sources", example: "eng-kjv2006" }),
   name: z.string().max(200).openapi({ description: "Full version name", example: "King James Version" }),
   description: z.string().nullable().openapi({ description: "Version description" }),
   license: z.string().nullable().openapi({ description: "License type" }),
@@ -33,6 +37,12 @@ export const VersionSchema = z.object({
   languageNativeName: z.string().nullable().optional().openapi({ description: "Language name in its own script" }),
   textDirection: z.string().nullable().optional().openapi({ description: "Text direction: ltr or rtl", example: "ltr" }),
 });
+
+export const VersionListItemSchema = VersionSchema.extend({
+  source: z.literal("self-hosted").openapi({ description: "Where the text is served from" }),
+  isOfflineCapable: z.boolean().openapi({ description: "Whether the full text can be downloaded" }),
+  attributionRequired: z.boolean().openapi({ description: "True unless the version is public domain" }),
+}).openapi("VersionListItem");
 
 export const BookSchema = z.object({
   id: z.string().uuid().openapi({ description: "Unique book identifier" }),
@@ -57,6 +67,130 @@ export const VerseSchema = z.object({
   number: z.number().int().openapi({ description: "Verse number" }),
   text: z.string().openapi({ description: "Verse text content" }),
 });
+
+export const PassageVerseSchema = z.object({
+  id: z.number().int().openapi({ description: "Verse numeric ID" }),
+  number: z.number().int().openapi({ description: "Verse number", example: 16 }),
+  text: z.string().openapi({ description: "Verse text, markup removed" }),
+});
+
+/** Licensing facts every scripture payload carries, read from the version row. */
+const versionLicensingFields = {
+  license: z.string().nullable().openapi({ description: "License or copyright statement for the version" }),
+  attribution: z.string().nullable().openapi({ description: "Attribution text to display with the passage" }),
+  attributionUrl: z.string().nullable().openapi({ description: "Link for the attribution" }),
+  languageCode: z.string().nullable().openapi({ description: "ISO 639-3 language code", example: "eng" }),
+  textDirection: z.string().nullable().openapi({ description: "ltr or rtl", example: "ltr" }),
+};
+
+export const PassageSchema = z
+  .object({
+    reference: z.string().openapi({ description: "The reference as requested", example: "John 3:16" }),
+    version: z.string().openapi({ description: "Version abbreviation", example: "WEB" }),
+    verses: z.array(PassageVerseSchema),
+    bookCode: z.string().openapi({ description: "USFM book code", example: "JHN" }),
+    bookName: z.string().openapi({ description: "Book name in this version", example: "John" }),
+    chapter: z.number().int().openapi({ example: 3 }),
+    verseStart: z.number().int().openapi({ description: "First verse returned", example: 16 }),
+    verseEnd: z.number().int().openapi({ description: "Last verse returned", example: 16 }),
+    ...versionLicensingFields,
+  })
+  .openapi("Passage");
+
+export const ParallelPassageSchema = z
+  .object({
+    reference: z.string(),
+    versions: z
+      .record(z.string(), z.union([PassageSchema, z.object({ error: z.string() })]))
+      .openapi({ description: "Keyed by the version code requested. A version that failed carries `error`." }),
+  })
+  .openapi("ParallelPassage");
+
+export const ChapterMetaSchema = z
+  .object({
+    version: z.string().openapi({ example: "KJV" }),
+    versionCode: z
+      .string()
+      .nullable()
+      .openapi({ description: "Stable URL-safe version code (the eBible translation id); accepted wherever a version abbreviation is", example: "eng-kjv2006" }),
+    versionName: z.string().openapi({ example: "King James Version" }),
+    bookCode: z.string().openapi({ example: "JHN" }),
+    bookName: z.string().openapi({ description: "Book name in this version", example: "John" }),
+    chapter: z.number().int().openapi({ example: 3 }),
+    licenseType: z.string().openapi({ description: "PD, CC_BY, CC_BY_SA, or COPYRIGHTED_REDISTRIBUTABLE", example: "PD" }),
+    ...versionLicensingFields,
+  })
+  .openapi("ChapterMeta");
+
+export const SearchResultSchema = z
+  .object({
+    id: z.number().int().openapi({ description: "Verse numeric ID" }),
+    text: z.string().openapi({ description: "Verse text, markup removed" }),
+    verseNumber: z.number().int().openapi({ example: 16 }),
+    chapterNumber: z.number().int().openapi({ example: 3 }),
+    bookName: z.string().openapi({ example: "John" }),
+    bookCode: z.string().openapi({ example: "JHN" }),
+    versionAbbreviation: z.string().openapi({ example: "KJV" }),
+    license: z.string().nullable(),
+    attribution: z.string().nullable(),
+    attributionUrl: z.string().nullable(),
+    rank: z.number().openapi({ description: "Relevance score; higher is better. Comparable only within one response." }),
+    verse_number: z.number().int().openapi({ deprecated: true, description: "Deprecated: use verseNumber" }),
+    chapter_number: z.number().int().openapi({ deprecated: true, description: "Deprecated: use chapterNumber" }),
+    book_name: z.string().openapi({ deprecated: true, description: "Deprecated: use bookName" }),
+    book_code: z.string().openapi({ deprecated: true, description: "Deprecated: use bookCode" }),
+    version_abbreviation: z.string().openapi({ deprecated: true, description: "Deprecated: use versionAbbreviation" }),
+  })
+  .openapi("SearchResult");
+
+export const DownloadVersionMetaSchema = z
+  .object({
+    id: z.string().uuid(),
+    abbreviation: z.string().openapi({ example: "WEB" }),
+    code: z.string().nullable().openapi({ description: "Stable URL-safe version code", example: "engwebp" }),
+    name: z.string().openapi({ example: "World English Bible" }),
+    licenseType: z.string().openapi({ example: "PD" }),
+    ...versionLicensingFields,
+  })
+  .openapi("DownloadVersionMeta");
+
+export const DownloadBookSchema = z
+  .object({
+    bookCode: z.string().openapi({ description: "USFM book code", example: "GEN" }),
+    code: z.string().openapi({ deprecated: true, description: "Alias of bookCode for existing offline clients" }),
+    name: z.string().openapi({ description: "Book name in this version", example: "Genesis" }),
+    position: z.number().int(),
+    testament: z.string().openapi({ example: "OT" }),
+    chapters: z.array(
+      z.object({
+        number: z.number().int(),
+        verses: z.array(z.object({ number: z.number().int(), text: z.string() })),
+      })
+    ),
+  })
+  .openapi("DownloadBook");
+
+export const DownloadBooksSchema = z
+  .object({
+    version: DownloadVersionMetaSchema,
+    name: z.string().openapi({ deprecated: true, description: "Alias of version.name for existing offline clients" }),
+    languageCode: z
+      .string()
+      .nullable()
+      .openapi({ deprecated: true, description: "Alias of version.languageCode for existing offline clients" }),
+    books: z.array(DownloadBookSchema),
+  })
+  .openapi("DownloadBooks");
+
+export const DownloadLegacySchema = z
+  .object({
+    version: z.object({ abbreviation: z.string(), name: z.string(), license: z.string().nullable() }),
+    books: z
+      .record(z.string(), z.record(z.string(), z.record(z.string(), z.string())))
+      .openapi({ description: "bookCode -> chapter -> verse -> text" }),
+    attribution: z.string().optional(),
+  })
+  .openapi("DownloadLegacy");
 
 // --- Query Parameter Schemas ---
 
@@ -111,14 +245,29 @@ export function successListSchema<T extends z.ZodTypeAny>(itemSchema: T) {
 
 // --- Daily Verse Schema ---
 
-export const DailyVerseSchema = z.object({
-  dayOfYear: z.number().int().openapi({ description: "Day of year (1-366)" }),
-  reference: z.string().openapi({ description: "Bible reference", example: "John 3:16" }),
-  text: z.string().openapi({ description: "Verse text" }),
-  version: z.string().openapi({ description: "Version abbreviation", example: "KJV" }),
-  requestedVersion: z.string().optional().openapi({ description: "Originally requested version (if different)" }),
-  note: z.string().optional().openapi({ description: "Note about version mismatch" }),
-});
+export const DailyVerseSchema = z
+  .object({
+    dayOfYear: z.number().int().openapi({
+      description: "Calendar slot 1-366 on a leap-year calendar, so a date always maps to the same verse (Feb 29 is 60, Dec 31 is 366)",
+    }),
+    date: z.string().openapi({ description: "The UTC date served, YYYY-MM-DD", example: "2026-10-14" }),
+    reference: z.string().openapi({ description: "Bible reference (English)", example: "John 3:16" }),
+    text: z.string().openapi({ description: "Verse text in `version`" }),
+    version: z.string().openapi({ description: "Version the text is in", example: "WEB" }),
+    bookCode: z.string().optional().openapi({ description: "USFM book code", example: "JHN" }),
+    bookName: z.string().optional().openapi({ description: "Book name in `version`, when served from the corpus" }),
+    chapter: z.number().int().optional(),
+    verseStart: z.number().int().optional(),
+    verseEnd: z.number().int().optional(),
+    license: z.string().nullable().optional(),
+    attribution: z.string().nullable().optional(),
+    attributionUrl: z.string().nullable().optional(),
+    languageCode: z.string().nullable().optional(),
+    textDirection: z.string().nullable().optional(),
+    requestedVersion: z.string().optional().openapi({ description: "Set only when the requested version lacks the verse and the curated text was served instead" }),
+    note: z.string().optional().openapi({ description: "Explains the fallback when requestedVersion is set" }),
+  })
+  .openapi("DailyVerse");
 
 // --- Admin Schemas ---
 

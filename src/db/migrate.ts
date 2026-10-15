@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 import { sql } from "drizzle-orm";
+import { runMigrations } from "./run-migrations.js";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -11,14 +11,12 @@ if (!connectionString) {
 }
 
 async function main() {
+  await runMigrations(connectionString!);
+
   const migrationClient = postgres(connectionString!, { max: 1 });
   const db = drizzle(migrationClient);
 
-  console.log("Running migrations...");
-
-  await migrate(db, { migrationsFolder: "./drizzle" });
-
-  console.log("Migrations complete. Setting up extensions and indexes...");
+  console.log("Setting up extensions and indexes...");
 
   // Create pg_trgm extension for fuzzy text search
   await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`);

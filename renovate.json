@@ -1,0 +1,51 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigestsToSemver"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "timezone": "UTC",
+  "labels": [
+    "dependencies"
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": [
+      "security"
+    ],
+    "schedule": [
+      "at any time"
+    ]
+  },
+  "packageRules": [
+    {
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "dependencies"
+    },
+    {
+      "matchManagers": [
+        "dockerfile",
+        "github-actions"
+      ],
+      "schedule": [
+        "before 6am on the first day of the month"
+      ],
+      "groupName": "build infrastructure"
+    },
+    {
+      "description": "Node 24 is the runtime (Dockerfiles, CI, engines); keep its types and base image on the same major until the runtime moves",
+      "matchPackageNames": [
+        "@types/node",
+        "node"
+      ],
+      "allowedVersions": "<25"
+    }
+  ]
+}

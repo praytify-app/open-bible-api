@@ -3,12 +3,11 @@ import { db } from "../db/client.js";
 import { books, chapters } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
-import { cacheControl } from "../middleware/cache.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { ChapterSchema, ErrorSchema } from "../lib/openapi-schemas.js";
 
-const SEVEN_DAYS = 604800;
-
 const booksRouter = new OpenAPIHono();
+booksRouter.use("*", cacheControl(CachePolicy.scripture));
 
 const bookChaptersRoute = createRoute({
   method: "get",

@@ -4,6 +4,8 @@ import { languages, versions, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql } from "drizzle-orm";
 import { success, errorResponse } from "../lib/responses.js";
 import { adminAuth } from "../middleware/admin-auth.js";
+import { versionCode } from "../lib/version-lookup.js";
+import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import {
   AdminStatsSchema,
   CreateVersionBodySchema,
@@ -13,13 +15,16 @@ import {
 
 const adminRouter = new OpenAPIHono();
 
-// All admin routes require auth
+// All admin routes require auth and are never cached
+adminRouter.use("*", cacheControl(CachePolicy.noStore));
 adminRouter.use("*", adminAuth());
 
 const adminStatsRoute = createRoute({
   method: "get",
   path: "/stats",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Get database statistics",
   description: "Returns counts of languages, versions, verses, and database size. Requires admin authentication.",
   responses: {
@@ -42,6 +47,8 @@ const createVersionRoute = createRoute({
   method: "post",
   path: "/versions",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Create a new Bible version",
   description: "Add a new Bible version to the database. Requires admin authentication.",
   request: {
@@ -58,7 +65,7 @@ const createVersionRoute = createRoute({
       description: "Version created",
       content: {
         "application/json": {
-          schema: z.object({ data: z.any() }),
+          schema: z.object({ data: VersionSchema }),
         },
       },
     },
@@ -81,6 +88,8 @@ const seedRoute = createRoute({
   method: "post",
   path: "/seed",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Seed placeholder",
   description: "Returns instructions for seeding via CLI. Requires admin authentication.",
   responses: {
@@ -104,6 +113,8 @@ const deleteVersionRoute = createRoute({
   method: "delete",
   path: "/versions/{id}",
   tags: ["Admin"],
+  // Operator surface: served, but kept out of the published spec.
+  hide: true,
   summary: "Delete a Bible version",
   description: "Delete a version and all its associated books, chapters, and verses (CASCADE). Requires admin authentication.",
   request: {
@@ -198,7 +209,7 @@ adminRouter.openapi(createVersionRoute, async (c) => {
     })
     .returning();
 
-  return c.json({ data: newVersion }, 201);
+  return c.json({ data: { ...newVersion, code: versionCode(newVersion.sourceUrl) } }, 201);
 });
 
 adminRouter.openapi(seedRoute, async (c) => {

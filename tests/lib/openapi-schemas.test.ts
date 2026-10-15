@@ -26,6 +26,7 @@ describe("LanguageSchema", () => {
     script: "Latin",
     direction: "ltr" as const,
     createdAt: "2026-01-01T00:00:00.000Z",
+    versionCount: 3,
   };
 
   it("accepts a valid language", () => {
@@ -55,6 +56,7 @@ describe("VersionSchema", () => {
   const valid = {
     id: "550e8400-e29b-41d4-a716-446655440000",
     abbreviation: "KJV",
+    code: null,
     name: "King James Version",
     description: null,
     license: "PD",
@@ -206,6 +208,7 @@ describe("successSchema", () => {
         script: null,
         direction: "ltr",
         createdAt: "2026-01-01T00:00:00.000Z",
+        versionCount: 3,
       },
     });
     expect(result.success).toBe(true);
@@ -230,6 +233,7 @@ describe("DailyVerseSchema", () => {
   it("accepts a daily verse", () => {
     const result = DailyVerseSchema.safeParse({
       dayOfYear: 74,
+      date: "2026-03-15",
       reference: "John 3:16",
       text: "For God so loved...",
       version: "KJV",
@@ -240,6 +244,7 @@ describe("DailyVerseSchema", () => {
   it("accepts with optional fields", () => {
     const result = DailyVerseSchema.safeParse({
       dayOfYear: 74,
+      date: "2026-03-15",
       reference: "John 3:16",
       text: "For God so loved...",
       version: "KJV",
@@ -247,6 +252,16 @@ describe("DailyVerseSchema", () => {
       note: "Verse seeded in KJV",
     });
     expect(result.success).toBe(true);
+  });
+
+  it("requires the served date", () => {
+    const result = DailyVerseSchema.safeParse({
+      dayOfYear: 74,
+      reference: "John 3:16",
+      text: "For God so loved...",
+      version: "KJV",
+    });
+    expect(result.success).toBe(false);
   });
 });
 

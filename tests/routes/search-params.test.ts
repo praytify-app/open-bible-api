@@ -66,7 +66,7 @@ describe("GET /api/v1/search", () => {
   });
 
   it("returns camelCase fields, keeps the snake_case ones, and cleans the text", async () => {
-    mock.queue([{ id: "ver-webu", languageCode: "eng" }]);
+    mock.queue([{ id: "ver-webu", languageCode: "eng", abbreviation: "WEBU" }]);
     mock.queueExecute([ROW]);
 
     const res = await app.request("/api/v1/search?q=loved&version=WEBU");
@@ -94,7 +94,7 @@ describe("GET /api/v1/search", () => {
   });
 
   it("resolves the scope in one query, then searches once", async () => {
-    mock.queue([{ id: "ver-kjv", languageCode: "eng" }]);
+    mock.queue([{ id: "ver-kjv", languageCode: "eng", abbreviation: "KJV" }]);
     await app.request("/api/v1/search?q=love&version=KJV");
     expect(mock.calls.queries).toBe(1);
     expect(mock.calls.executes).toBe(1);
@@ -102,7 +102,7 @@ describe("GET /api/v1/search", () => {
   });
 
   it("binds clamped paging instead of passing garbage to Postgres", async () => {
-    mock.queue([{ id: "ver-kjv", languageCode: "eng" }]);
+    mock.queue([{ id: "ver-kjv", languageCode: "eng", abbreviation: "KJV" }]);
     const res = await app.request("/api/v1/search?q=love&version=KJV&limit=-3&offset=999999");
     expect(res.status).toBe(200);
     const { params } = lastQuery();
@@ -110,7 +110,7 @@ describe("GET /api/v1/search", () => {
   });
 
   it("escapes LIKE wildcards on the trigram path", async () => {
-    mock.queue([{ id: "ver-yor", languageCode: "yor" }]);
+    mock.queue([{ id: "ver-yor", languageCode: "yor", abbreviation: "YOR" }]);
     await app.request(`/api/v1/search?q=${encodeURIComponent("%_")}&version=YOR`);
     const { sql, params } = lastQuery();
     expect(sql).toContain("ILIKE");

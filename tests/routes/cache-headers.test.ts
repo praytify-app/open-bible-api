@@ -84,7 +84,7 @@ describe("HTTP caching", () => {
   });
 
   it("gives search a short public lifetime", async () => {
-    mock.queue([{ id: "v1", languageCode: "eng" }]);
+    mock.queue([{ id: "v1", languageCode: "eng", abbreviation: "KJV" }]);
     mock.queueExecute([]);
     const res = await app.request("/api/v1/search?q=love&version=KJV");
     expect(res.status).toBe(200);

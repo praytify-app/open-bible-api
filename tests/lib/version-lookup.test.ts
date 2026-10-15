@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickVersion, sourceUrlForCode, versionCode } from "../../src/lib/version-lookup.js";
+import { abbreviationMatches, pickVersion, sourceUrlForCode, versionCode } from "../../src/lib/version-lookup.js";
 
 const ebible = (id: string) => `https://ebible.org/Scriptures/${id}_usfm.zip`;
 
@@ -53,5 +53,29 @@ describe("pickVersion", () => {
 
   it("returns nothing when neither matches", () => {
     expect(pickVersion(rows, "NOPE", key)).toBeUndefined();
+  });
+
+  it("ignores case for abbreviations, legacy titles, and codes", () => {
+    expect(pickVersion(rows, "kjv", key)?.id).toBe("kjv");
+    expect(pickVersion(rows, "asv", key)?.id).toBe("asv-legacy");
+    expect(pickVersion(rows, "WORLD ENGLISH BIBLE", key)?.id).toBe("titled");
+    expect(pickVersion(rows, "ENGWEBP", key)?.id).toBe("titled");
+  });
+
+  it("prefers an exact-case match over a case-insensitive one", () => {
+    const pair = [
+      { id: "lower", abbreviation: "web", sourceUrl: null },
+      { id: "upper", abbreviation: "WEB", sourceUrl: null },
+    ];
+    expect(pickVersion(pair, "WEB", (r) => r)?.id).toBe("upper");
+    expect(pickVersion(pair, "web", (r) => r)?.id).toBe("lower");
+  });
+});
+
+describe("abbreviationMatches", () => {
+  it("matches canonical and legacy forms in any case", () => {
+    expect(abbreviationMatches("KJV", "kjv")).toBe(true);
+    expect(abbreviationMatches("American Standard Version (1901)", "asv")).toBe(true);
+    expect(abbreviationMatches("KJV", "WEB")).toBe(false);
   });
 });

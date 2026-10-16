@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.5.0] - Unreleased
+## [1.5.1] - 2026-10-16
+
+### Added
+
+- The version book list returns `missingChapters` per book: chapter numbers from 1 to `chapterCount` that have no text. Partial translations import with gaps, and clients that list `1..chapterCount` can now skip them. Computed per request from the `(book_id, number)` index; no migration.
+
+## [1.5.0] - 2026-10-16
 
 ### Added
 

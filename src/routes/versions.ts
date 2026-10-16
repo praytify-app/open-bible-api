@@ -2,7 +2,7 @@ import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { prepared } from "../db/prepared.js";
 import { db, downloadStatementTimeoutMs } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
-import { eq, count, sql, and, asc, or, ilike } from "drizzle-orm";
+import { eq, count, sql, and, asc, or, ilike, getTableColumns } from "drizzle-orm";
 import { success, errorResponse, parsePagination } from "../lib/responses.js";
 import { cacheControl, CachePolicy } from "../middleware/cache.js";
 import { canonicalizeVersionAbbreviation } from "../lib/version-abbreviations.js";
@@ -33,9 +33,21 @@ const versionKeyQuery = prepared(() =>
     .prepare("version_key")
 );
 
+// Chapter numbers inside a book's range that have no text. Partial translations
+// import with gaps, and a client listing 1..chapterCount needs to skip them.
+// Probes the (book_id, number) unique index once per chapter in range.
+// The outer columns are qualified by hand: in a single-table select drizzle
+// renders ${books.id} as a bare "id", which inside this subquery would bind to
+// chapters.id and report every chapter missing.
+const missingChapters = sql<number[]>`coalesce((
+  select array_agg(s.n order by s.n)
+  from generate_series(1, "books"."chapter_count"::int) as s(n)
+  where not exists (select 1 from ${chapters} c where c.book_id = "books"."id" and c.number = s.n)
+), '{}'::int[])`;
+
 const versionBooksQuery = prepared(() =>
   db
-    .select()
+    .select({ ...getTableColumns(books), missingChapters })
     .from(books)
     .where(eq(books.versionId, sql.placeholder("versionId")))
     .orderBy(books.position)

@@ -50,8 +50,12 @@ export const BookSchema = z.object({
   bookCode: z.string().max(6).openapi({ description: "Standard book code", example: "GEN" }),
   name: z.string().max(100).openapi({ description: "Book name", example: "Genesis" }),
   position: z.number().int().openapi({ description: "Canonical position (1-based)" }),
-  chapterCount: z.number().int().openapi({ description: "Number of chapters" }),
+  chapterCount: z.number().int().openapi({ description: "Highest chapter number" }),
   testament: z.string().max(2).openapi({ description: "OT or NT", example: "OT" }),
+  missingChapters: z
+    .array(z.number().int())
+    .optional()
+    .openapi({ description: "Chapter numbers from 1 to chapterCount with no text in this version (partial translations). Empty for complete books. Returned by the version book list", example: [] }),
 });
 
 export const ChapterSchema = z.object({

@@ -9,6 +9,7 @@ import {
   verses,
 } from "../db/schema.js";
 import { db } from "../db/client.js";
+import { highestChapterNumber } from "./chapter-count.js";
 
 export interface SeedVersionOptions {
   /** Parsed books from Bible files */
@@ -186,7 +187,7 @@ export async function seedVersion(options: SeedVersionOptions & { force?: boolea
             bookCode: meta.code,
             name: parsedBook.bookName || meta.englishName,
             position: meta.position,
-            chapterCount: parsedBook.chapters.length,
+            chapterCount: highestChapterNumber(parsedBook.chapters),
             testament: meta.testament,
           })
           .returning({ id: books.id });

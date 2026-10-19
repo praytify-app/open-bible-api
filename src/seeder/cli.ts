@@ -376,7 +376,7 @@ program
 
 program
   .command("audit-data")
-  .description("Report empty chapters and abbreviations that are not URL-safe (read-only)")
+  .description("Report empty chapters, chapter counts below the highest chapter, and abbreviations that are not URL-safe (read-only)")
   .option("--json", "Print the full report as JSON")
   .action(async (opts: { json?: boolean }) => {
     try {
@@ -392,6 +392,12 @@ program
         console.log(`  ${String(v.count).padStart(5)}  ${v.code ?? "(no code)"}  ${v.abbreviation}  e.g. ${v.sample.join(", ")}`);
       }
       if (emptyChapters.byVersion.length > 20) console.log(`  ... ${emptyChapters.byVersion.length - 20} more (use --json)`);
+      const { countBelowHighest: low } = report;
+      console.log(`\nChapter count below the highest chapter: ${low.books} books in ${low.byVersion.length} versions, hiding ${low.hiddenChapters} chapters from readers (set chapter_count to the highest number)`);
+      for (const v of low.byVersion.slice(0, 20)) {
+        console.log(`  ${String(v.books).padStart(5)}  ${v.code ?? "(no code)"}  ${v.abbreviation}  e.g. ${v.sample.join(", ")}`);
+      }
+      if (low.byVersion.length > 20) console.log(`  ... ${low.byVersion.length - 20} more (use --json)`);
       console.log(`\nAbbreviations that are not short and URL-safe: ${unsafeAbbreviations.length} (link these by code)`);
       for (const v of unsafeAbbreviations.slice(0, 20)) console.log(`  ${v.code ?? "(no code)"}  ${JSON.stringify(v.abbreviation)}`);
       if (unsafeAbbreviations.length > 20) console.log(`  ... ${unsafeAbbreviations.length - 20} more (use --json)`);

@@ -4,14 +4,22 @@ import { versionCode } from "../lib/version-lookup.js";
 
 /**
  * Read-only checks on an imported corpus, for operators deciding what to
- * clean up. Neither problem breaks the API: an empty chapter returns 404 with
- * a clear message, and every eBible version can be addressed by its code.
+ * clean up. An empty chapter returns 404 with a clear message, and every eBible
+ * version can be addressed by its code. A chapter count below the highest
+ * chapter number is worse: readers list 1..chapterCount, so the chapters above
+ * it are served by direct URL but cannot be reached from a reader.
  */
 export interface DataAudit {
   versions: number;
   emptyChapters: {
     total: number;
     byVersion: { abbreviation: string; code: string | null; count: number; sample: string[] }[];
+  };
+  /** Books whose chapter_count is below their highest chapter number (the seeder stored a count until October 2026). */
+  countBelowHighest: {
+    books: number;
+    hiddenChapters: number;
+    byVersion: { abbreviation: string; code: string | null; books: number; sample: string[] }[];
   };
   /** Abbreviations that are not short and URL-safe, so links should use the code. */
   unsafeAbbreviations: { abbreviation: string; code: string | null }[];
@@ -39,6 +47,18 @@ export async function auditData(db: PostgresJsDatabase<Record<string, unknown>>)
     ORDER BY count DESC, v.abbreviation
   `)) as unknown as { abbreviation: string; source_url: string | null; count: number; sample: string[] }[];
 
+  const low = (await db.execute(sql`
+    SELECT v.abbreviation, v.source_url, count(*)::int AS books, sum(m.above)::int AS hidden,
+           (array_agg(b.book_code || ' ' || b.chapter_count || ' < ' || m.highest ORDER BY b.position))[1:5] AS sample
+    FROM books b
+    JOIN (SELECT c.book_id, max(c.number) AS highest, count(*) FILTER (WHERE c.number > bb.chapter_count) AS above
+          FROM chapters c JOIN books bb ON bb.id = c.book_id GROUP BY c.book_id) m ON m.book_id = b.id
+    JOIN versions v ON v.id = b.version_id
+    WHERE m.highest > b.chapter_count
+    GROUP BY v.abbreviation, v.source_url
+    ORDER BY books DESC, v.abbreviation
+  `)) as unknown as { abbreviation: string; source_url: string | null; books: number; hidden: number; sample: string[] }[];
+
   const unsafe = (await db.execute(sql`
     SELECT abbreviation, source_url FROM versions
     WHERE abbreviation !~ ${SHORT_SAFE}
@@ -56,6 +76,11 @@ export async function auditData(db: PostgresJsDatabase<Record<string, unknown>>)
         count: r.count,
         sample: r.sample,
       })),
+    },
+    countBelowHighest: {
+      books: low.reduce((sum, r) => sum + r.books, 0),
+      hiddenChapters: low.reduce((sum, r) => sum + r.hidden, 0),
+      byVersion: low.map((r) => ({ abbreviation: r.abbreviation, code: versionCode(r.source_url), books: r.books, sample: r.sample })),
     },
     unsafeAbbreviations,
     unaddressable: unsafeAbbreviations.filter((v) => v.code === null).map((v) => v.abbreviation),

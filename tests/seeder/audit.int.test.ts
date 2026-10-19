@@ -57,6 +57,12 @@ suite("auditData", () => {
     const titled = await version(" World Messianic Bible", "https://ebible.org/Scriptures/engwmb_usfm.zip");
     await chapter(titled, 1, ["In the beginning"]);
     await chapter(titled, 2, []);
+    // A partial book stored with a chapter count instead of its highest number:
+    // only Isaiah 41 exists, so a count of 1 hides it from readers.
+    const [partial] = await client`
+      INSERT INTO books (version_id, book_code, name, position, chapter_count, testament)
+      SELECT version_id, 'ISA', 'Isaiah', 23, 1, 'OT' FROM books WHERE id = ${titled} RETURNING id`;
+    await chapter(partial.id, 41, ["Keep silence before me"]);
     // A slash, and no code to fall back on.
     const slashed = await version("Bible/Testament", null);
     await chapter(slashed, 1, []);
@@ -79,6 +85,15 @@ suite("auditData", () => {
         { abbreviation: "Bible/Testament", code: null, count: 1, sample: ["JHN 1"] },
       ])
     );
+  });
+
+  it("finds books whose highest chapter is above their stored count", async () => {
+    const report = await auditData(drizzle(client));
+    expect(report.countBelowHighest).toEqual({
+      books: 1,
+      hiddenChapters: 1,
+      byVersion: [{ abbreviation: " World Messianic Bible", code: "engwmb", books: 1, sample: ["ISA 1 < 41"] }],
+    });
   });
 
   it("lists abbreviations that need a code in URLs, and the ones that have none", async () => {

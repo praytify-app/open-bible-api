@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { dailyVerses } from "../db/schema.js";
 import { eq } from "drizzle-orm";
@@ -9,8 +9,9 @@ import { parseReference } from "../lib/reference-parser.js";
 import { englishAliasToCode } from "../lib/book-names.js";
 import { loadPassage, loadVersionsWithBooks } from "../lib/passages.js";
 import { DailyVerseSchema, ErrorSchema } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
-const dailyRouter = new OpenAPIHono();
+const dailyRouter = createRouter();
 // The handler sets its own expiry; this covers errors.
 dailyRouter.use("*", cacheControl(CachePolicy.search));
 

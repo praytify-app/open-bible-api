@@ -1,4 +1,3 @@
-import { OpenAPIHono } from "@hono/zod-openapi";
 import { etag } from "hono/etag";
 import { serve } from "@hono/node-server";
 import { apiReference } from "@scalar/hono-api-reference";
@@ -17,8 +16,9 @@ import { esvAudioRouter } from "./routes/esv-audio.js";
 import { runMigrations } from "./db/run-migrations.js";
 import { queryClient } from "./db/client.js";
 import { PACKAGE_VERSION } from "./lib/package-version.js";
+import { createRouter } from "./lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 // Global CORS middleware
 app.use("*", corsMiddleware(process.env.CORS_ORIGINS || "*"));

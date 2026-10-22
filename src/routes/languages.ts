@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { languages, versions } from "../db/schema.js";
 import { eq, count, sql } from "drizzle-orm";
@@ -11,8 +11,9 @@ import {
   ErrorSchema,
   PaginationMetaSchema,
 } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
-const languagesRouter = new OpenAPIHono();
+const languagesRouter = createRouter();
 languagesRouter.use("*", cacheControl(CachePolicy.scripture));
 
 // --- Route definitions ---

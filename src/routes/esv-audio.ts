@@ -1,9 +1,10 @@
 // src/routes/esv-audio.ts
 
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { ErrorSchema } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
-const esvAudioRouter = new OpenAPIHono();
+const esvAudioRouter = createRouter();
 
 const ESV_API_BASE = "https://api.esv.org/v3/passage";
 

@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { prepared } from "../db/prepared.js";
 import { db } from "../db/client.js";
 import { chapters, verses, books, versions, languages } from "../db/schema.js";
@@ -9,6 +9,7 @@ import { pickVersion, versionMatchParams, versionMatchSql } from "../lib/version
 import { cleanVerseText } from "../lib/text-cleaner.js";
 import { toVersionMeta, versionMetaColumns } from "../lib/passages.js";
 import { VerseSchema, ErrorSchema, ChapterMetaSchema } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -44,7 +45,7 @@ const chapterVersesQuery = prepared(() =>
     .prepare("chapter_verses")
 );
 
-const chaptersRouter = new OpenAPIHono();
+const chaptersRouter = createRouter();
 chaptersRouter.use("*", cacheControl(CachePolicy.scripture));
 
 const versesByRefRoute = createRoute({

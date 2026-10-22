@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { languages, versions, books, chapters, verses } from "../db/schema.js";
 import { eq, count, sql } from "drizzle-orm";
@@ -12,8 +12,9 @@ import {
   VersionSchema,
   ErrorSchema,
 } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
-const adminRouter = new OpenAPIHono();
+const adminRouter = createRouter();
 
 // All admin routes require auth and are never cached
 adminRouter.use("*", cacheControl(CachePolicy.noStore));

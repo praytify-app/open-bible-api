@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { languages, versions } from "../db/schema.js";
 import { and, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
@@ -12,6 +12,7 @@ import {
   getVersionAbbreviationCandidates,
 } from "../lib/version-abbreviations.js";
 import { ErrorSchema, SearchResultSchema } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
 export const SEARCH_LIMITS = {
   defaultLimit: 20,
@@ -43,7 +44,7 @@ export function escapeLikePattern(input: string): string {
   return input.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-const searchRouter = new OpenAPIHono();
+const searchRouter = createRouter();
 searchRouter.use("*", cacheControl(CachePolicy.search));
 
 const searchRoute = createRoute({

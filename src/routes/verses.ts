@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { db } from "../db/client.js";
 import { verses } from "../db/schema.js";
 import { eq } from "drizzle-orm";
@@ -13,13 +13,14 @@ import {
   PassageSchema,
   ParallelPassageSchema,
 } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
 // Each version costs a book-list lookup and a verse query, so the fan-out
 // is bounded. Five covers side-by-side reading without letting one request
 // turn into dozens of queries.
 export const MAX_PARALLEL_VERSIONS = 5;
 
-const versesRouter = new OpenAPIHono();
+const versesRouter = createRouter();
 versesRouter.use("*", cacheControl(CachePolicy.scripture));
 
 const verseRefRoute = createRoute({

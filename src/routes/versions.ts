@@ -1,4 +1,4 @@
-import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { prepared } from "../db/prepared.js";
 import { db, downloadStatementTimeoutMs } from "../db/client.js";
 import { versions, languages, books, chapters, verses } from "../db/schema.js";
@@ -20,6 +20,7 @@ import {
   DownloadLegacySchema,
   VersionListItemSchema,
 } from "../lib/openapi-schemas.js";
+import { createRouter } from "../lib/router.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -54,7 +55,7 @@ const versionBooksQuery = prepared(() =>
     .prepare("version_books")
 );
 
-const versionsRouter = new OpenAPIHono();
+const versionsRouter = createRouter();
 versionsRouter.use("*", cacheControl(CachePolicy.scripture));
 
 function mapVersionForResponse<T extends { abbreviation: string; sourceUrl: string | null }>(

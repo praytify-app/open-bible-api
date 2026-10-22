@@ -223,6 +223,10 @@ export const ErrorSchema = z.object({
     code: z.string().openapi({ description: "Machine-readable error code", example: "NOT_FOUND" }),
     message: z.string().openapi({ description: "Human-readable error message" }),
     status: z.number().int().optional().openapi({ description: "HTTP status code" }),
+    issues: z
+      .array(z.object({ path: z.string(), message: z.string() }))
+      .optional()
+      .openapi({ description: "For VALIDATION_ERROR: each rejected field and why" }),
   }),
 });
 

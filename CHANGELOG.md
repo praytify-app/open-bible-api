@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.2] - 2026-10-22
+
+### Fixed
+
+- A request that fails validation (a query, path, or body value) returns `400` in the same `{ error: { code, message } }` envelope as every other error, with `code: "VALIDATION_ERROR"`, a readable `message` such as `Invalid query. search: Too small: expected string to have >=2 characters`, and an `issues` list of `{ path, message }`. It used to return `{ success: false, error: <ZodError> }`, whose `message` was a JSON dump that clients showed to people verbatim.
+- The seeder stores a book's highest chapter number as `chapter_count`, as the API documents. For partial translations it stored the number of chapters parsed, which sent readers to chapters that do not exist and hid ones that do.
+
+### Added
+
+- `audit-data` lists books whose `chapter_count` is lower than their highest chapter number, per version, to find corpora imported before the seeder fix.
+
 ## [1.5.1] - 2026-10-16
 
 ### Added
